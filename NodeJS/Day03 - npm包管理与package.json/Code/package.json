@@ -1,0 +1,48 @@
+{
+  "name": "day03-math-util",
+  "version": "1.0.0",
+  "description": "Day03 学习示例：演示 package.json 的 scripts 配置与 main 入口",
+  "main": "math-util.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "scripts": {
+    "// === 构建相关（含 pre/post 钩子） ===": "",
+    "prebuild": "echo [prebuild] 清理 dist 目录（演示钩子，实际可用 rimraf dist）",
+    "build": "echo [build] 模拟构建产物（实际可用 tsc / esbuild）",
+    "postbuild": "echo [postbuild] 构建完成 ✅",
+
+    "// === 开发相关（并行 / 跨平台环境变量） ===": "",
+    "predev": "echo [predev] 准备启动开发环境",
+    "dev": "node --watch math-util.js",
+    "dev:env": "cross-env NODE_ENV=development LOG_LEVEL=debug node math-util.js",
+
+    "// === 测试相关（Node 18+ 内置 test runner） ===": "",
+    "pretest": "echo [pretest] 测试前自检（实际可跑 tsc --noEmit）",
+    "test": "node --test",
+    "posttest": "echo [posttest] 测试结束",
+
+    "// === 串行与并行编排 ===": "",
+    "pipeline": "npm run lint && npm run test && npm run build",
+    "parallel": "concurrently \"npm:dev\" \"echo 并行任务演示\"",
+
+    "// === 启动与诊断 ===": "",
+    "start": "node ./use-npx-demo.js",
+    "lint": "echo [lint] 模拟 eslint（实际可装 eslint 后跑 eslint .）",
+    "audit": "npm audit --audit-level=high",
+    "clean": "echo [clean] 删除 node_modules / dist（实际可配 rimraf）"
+  },
+  "keywords": [
+    "ai-fullstack",
+    "npm",
+    "package-json",
+    "learning"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "// 注意": "本文件故意未声明 dependencies，便于先跑 npm audit 时得到空报告。练习 3 中可临时装 lodash@4.17.4 验证 audit。",
+  "// devDependencies 建议": "实际生产中应装 typescript / eslint / prettier / concurrently / cross-env / rimraf",
+  "// engines 强约束": "若需硬性拒绝低版本 Node 安装，在 .npmrc 加 engine-strict=true"
+}
