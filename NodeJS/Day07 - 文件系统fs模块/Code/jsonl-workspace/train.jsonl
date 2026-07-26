@@ -1,0 +1,12 @@
+{"id":1,"prompt":"你好","answer":"你好，有什么可以帮你？"}
+{"id":2,"prompt":"介绍一下 Node.js","answer":"Node.js 是基于 V8 的 JavaScript 运行时。"}
+{"id":3,"prompt":"什么是 fs 模块","answer":"fs 是 Node.js 的文件系统模块。"}
+
+this is not a json line
+{"id":4,"prompt":"Promise 是什么","answer":"Promise 是异步编程的一种容器。"}
+{"id":5,"answer":"缺 prompt 字段的行"}
+{"id":6,"prompt":"readline 怎么用","answer":"用 readline.createInterface 包装 ReadStream。"}
+{ "id": 7, "broken": 
+{"id":8,"prompt":"大文件怎么读","answer":"用 createReadStream 配合 readline 逐行读。"}
+{"id":9,"prompt":"原子写入","answer":"先写临时文件再 rename。"}
+{"id":10,"prompt":"什么是背压","answer":"背压是流处理中下游反压上游的机制。"}
