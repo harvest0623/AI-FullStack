@@ -1,0 +1,33 @@
+{
+  "name": "day13-request-validation",
+  "version": "1.0.0",
+  "description": "Day13 - 请求处理与数据校验示例代码（Joi / express-validator / multer + 统一错误响应）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "joi": "node joi-validation.js",
+    "ev": "node express-validator-demo.js",
+    "multer": "node multer-upload.js",
+    "error": "node unified-error.js"
+  },
+  "keywords": [
+    "express",
+    "joi",
+    "express-validator",
+    "multer",
+    "validation",
+    "nodejs",
+    "learning"
+  ],
+  "author": "AI-FullStack Learning",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "joi": "^17.13.3",
+    "express-validator": "^7.2.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
