@@ -1,0 +1,23 @@
+{
+  "name": "day11-express-middleware",
+  "version": "1.0.0",
+  "description": "Day11 - Express 中间件机制学习代码",
+  "main": "combined-app.js",
+  "scripts": {
+    "start": "node combined-app.js",
+    "basic": "node basic-middleware.js",
+    "auth": "node auth-middleware.js",
+    "error": "node error-middleware.js",
+    "cors": "node cors-middleware.js",
+    "rate-limit": "node rate-limit-middleware.js"
+  },
+  "keywords": ["express", "middleware", "nodejs"],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
