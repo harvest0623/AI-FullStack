@@ -1,0 +1,30 @@
+{
+  "name": "day14-error-logging",
+  "version": "1.0.0",
+  "description": "Day14 - 错误处理与日志记录示例代码",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "keywords": [
+    "express",
+    "error-handling",
+    "winston",
+    "morgan",
+    "logging",
+    "nodejs",
+    "learning"
+  ],
+  "author": "AI-FullStack Learning",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "morgan": "^1.10.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
