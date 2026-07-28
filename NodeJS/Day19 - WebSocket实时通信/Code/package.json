@@ -1,0 +1,31 @@
+{
+  "name": "day19-websocket-realtime",
+  "version": "1.0.0",
+  "description": "Day19 - WebSocket 实时通信示例代码",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "basic": "node basic-ws.js",
+    "express": "node express-ws.js",
+    "chat": "node chat-room.js",
+    "broadcast": "node broadcast-demo.js",
+    "heartbeat": "node heartbeat.js",
+    "auth": "node ws-auth.js"
+  },
+  "keywords": [
+    "websocket",
+    "ws",
+    "express",
+    "realtime",
+    "learning"
+  ],
+  "author": "AI-FullStack Learning",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
