@@ -1,0 +1,29 @@
+{
+  "name": "day18-jwt-auth",
+  "version": "1.0.0",
+  "description": "Day18 JWT 身份认证示例：bcrypt 密码哈希 + JWT 签发校验 + Express 中间件 + refresh token",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "password": "node password-hash.js",
+    "jwt": "node jwt-sign-verify.js"
+  },
+  "keywords": [
+    "jwt",
+    "authentication",
+    "authorization",
+    "bcrypt",
+    "express"
+  ],
+  "author": "AI-FullStack-Learner",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
