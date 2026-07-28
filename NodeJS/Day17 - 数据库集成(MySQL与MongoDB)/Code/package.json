@@ -1,0 +1,32 @@
+{
+  "name": "day17-database-integration",
+  "version": "1.0.0",
+  "description": "Day17 - 数据库集成(MySQL与MongoDB) 示例代码",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "mysql:pool": "node mysql-pool.js",
+    "mysql:tx": "node mysql-transaction.js",
+    "mongo:crud": "node mongoose-crud.js"
+  },
+  "keywords": [
+    "express",
+    "mysql2",
+    "mongoose",
+    "mongodb",
+    "database",
+    "repository-pattern",
+    "nodejs",
+    "learning"
+  ],
+  "author": "AI-FullStack Learning",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "mongoose": "^8.8.0",
+    "mysql2": "^3.11.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
