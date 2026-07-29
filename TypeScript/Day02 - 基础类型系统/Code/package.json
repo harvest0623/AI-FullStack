@@ -1,0 +1,28 @@
+{
+  "name": "day02-typescript-basic-types",
+  "version": "1.0.0",
+  "description": "Day02 - TypeScript 基础类型系统示例代码",
+  "scripts": {
+    "primitive": "ts-node primitive-types.ts",
+    "array-tuple": "ts-node array-tuple.ts",
+    "any-unknown-never": "ts-node any-unknown-never.ts",
+    "literal": "ts-node literal-types.ts",
+    "assertion": "ts-node type-assertion.ts",
+    "narrowing": "ts-node type-narrowing.ts"
+  },
+  "keywords": [
+    "typescript",
+    "types",
+    "learning"
+  ],
+  "author": "AI-FullStack Learning",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
