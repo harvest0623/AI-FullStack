@@ -1,0 +1,31 @@
+{
+  "name": "day03-interface-and-type",
+  "version": "1.0.0",
+  "description": "Day03 学习示例：interface 与 type 别名的定义、对比与实战",
+  "private": true,
+  "scripts": {
+    "interface-basic": "ts-node interface-basic.ts",
+    "type-alias": "ts-node type-alias.ts",
+    "interface-vs-type": "ts-node interface-vs-type.ts",
+    "index-signature": "ts-node index-signature.ts",
+    "function-types": "ts-node function-types.ts",
+    "structural-typing": "ts-node structural-typing.ts",
+    "check": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai-fullstack",
+    "typescript",
+    "interface",
+    "type-alias"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}
