@@ -1,0 +1,34 @@
+{
+  "name": "day07-enum-type-inference",
+  "version": "1.0.0",
+  "description": "Day07 - 枚举与类型推断学习代码",
+  "scripts": {
+    "numeric": "ts-node numeric-enum.ts",
+    "string": "ts-node string-enum.ts",
+    "const": "ts-node const-enum.ts",
+    "vs": "ts-node enum-vs-union.ts",
+    "inference": "ts-node type-inference.ts",
+    "widening": "ts-node type-widening.ts",
+    "bct": "ts-node best-common-type.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "enum",
+    "type-inference",
+    "as-const",
+    "widening",
+    "contextual-typing"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
