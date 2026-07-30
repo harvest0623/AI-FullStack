@@ -1,0 +1,36 @@
+{
+  "name": "day06-class-oop",
+  "version": "1.0.0",
+  "description": "Day06 - 类与面向对象学习代码",
+  "scripts": {
+    "basic": "ts-node class-basic.ts",
+    "access": "ts-node access-modifiers.ts",
+    "param": "ts-node parameter-properties.ts",
+    "accessor": "ts-node getters-setters.ts",
+    "abstract": "ts-node abstract-class.ts",
+    "inherit": "ts-node inheritance-implements.ts",
+    "static": "ts-node static-members.ts",
+    "generic": "ts-node generic-class.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "class",
+    "oop",
+    "access-modifiers",
+    "abstract",
+    "generic-class",
+    "design-pattern"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
