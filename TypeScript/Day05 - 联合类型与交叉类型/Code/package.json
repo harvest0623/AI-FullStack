@@ -1,0 +1,32 @@
+{
+  "name": "day05-union-intersection-types",
+  "version": "1.0.0",
+  "description": "Day05 - 联合类型与交叉类型学习代码",
+  "scripts": {
+    "union": "ts-node union-types.ts",
+    "intersection": "ts-node intersection-types.ts",
+    "discriminated": "ts-node discriminated-union.ts",
+    "narrowing": "ts-node typeof-narrowing.ts",
+    "guard": "ts-node custom-guard.ts",
+    "exhaustive": "ts-node exhaustive-check.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "union-types",
+    "intersection-types",
+    "narrowing",
+    "discriminated-union"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
