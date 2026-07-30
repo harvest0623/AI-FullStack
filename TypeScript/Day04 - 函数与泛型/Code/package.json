@@ -1,0 +1,31 @@
+{
+  "name": "day04-functions-and-generics",
+  "version": "1.0.0",
+  "description": "Day04 学习示例：函数类型、函数重载、泛型函数、泛型约束、Repository 模式",
+  "private": true,
+  "scripts": {
+    "function-types": "ts-node function-types.ts",
+    "function-overload": "ts-node function-overload.ts",
+    "generic-basic": "ts-node generic-basic.ts",
+    "generic-constraints": "ts-node generic-constraints.ts",
+    "generic-repository": "ts-node generic-repository.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai-fullstack",
+    "typescript",
+    "generics",
+    "functions",
+    "learning"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
