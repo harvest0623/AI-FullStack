@@ -1,0 +1,33 @@
+{
+  "name": "day08-advanced-utility-types",
+  "version": "1.0.0",
+  "description": "Day08 - 高级类型与工具类型学习代码",
+  "scripts": {
+    "keyof": "ts-node keyof-typeof.ts",
+    "mapped": "ts-node mapped-types.ts",
+    "conditional": "ts-node conditional-types.ts",
+    "utility": "ts-node utility-types.ts",
+    "custom": "ts-node custom-utility.ts",
+    "template": "ts-node template-literal.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "advanced-types",
+    "utility-types",
+    "mapped-types",
+    "conditional-types",
+    "template-literal"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
