@@ -1,0 +1,36 @@
+{
+  "name": "day09-decorators-and-metadata",
+  "version": "1.0.0",
+  "description": "Day09 - 装饰器与元数据学习代码",
+  "scripts": {
+    "class": "ts-node class-decorator.ts",
+    "method": "ts-node method-decorator.ts",
+    "property": "ts-node property-decorator.ts",
+    "parameter": "ts-node parameter-decorator.ts",
+    "factory": "ts-node decorator-factory.ts",
+    "reflect": "ts-node reflect-metadata-demo.ts",
+    "di": "ts-node mini-di-container.ts",
+    "controller": "ts-node mini-controller.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "decorator",
+    "reflect-metadata",
+    "aop",
+    "di",
+    "nestjs"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "reflect-metadata": "^0.2.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
