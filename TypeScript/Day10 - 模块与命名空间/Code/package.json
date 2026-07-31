@@ -1,0 +1,33 @@
+{
+  "name": "day10-modules-namespaces",
+  "version": "1.0.0",
+  "description": "Day10 - 模块与命名空间学习代码",
+  "scripts": {
+    "math": "ts-node math-utils.ts",
+    "string": "ts-node string-utils.ts",
+    "barrel": "ts-node index.ts",
+    "namespace": "ts-node namespace-demo.ts",
+    "merging": "ts-node declaration-merging.ts",
+    "import-type": "ts-node import-type.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "modules",
+    "namespaces",
+    "es-modules",
+    "declaration-merging",
+    "import-type"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
