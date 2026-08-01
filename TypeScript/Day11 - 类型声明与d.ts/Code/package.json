@@ -1,0 +1,28 @@
+{
+  "name": "day11-declaration-files",
+  "version": "1.0.0",
+  "description": "Day11 - 类型声明与 d.ts 学习代码",
+  "scripts": {
+    "use-declare": "ts-node use-declare.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "declaration-files",
+    "d-ts",
+    "module-augmentation",
+    "ambient-types",
+    "declare-module"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
