@@ -1,0 +1,34 @@
+{
+  "name": "day13-type-gymnastics",
+  "version": "1.0.0",
+  "description": "Day13 - 类型体操与实战学习代码",
+  "scripts": {
+    "deep": "ts-node deep-types.ts",
+    "pick": "ts-node pick-by-value.ts",
+    "utility": "ts-node my-utility.ts",
+    "string": "ts-node string-operations.ts",
+    "router": "ts-node type-safe-router.ts",
+    "events": "ts-node type-safe-events.ts",
+    "path": "ts-node object-path.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "typescript",
+    "type-gymnastics",
+    "conditional-types",
+    "infer",
+    "template-literal",
+    "mapped-types"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
