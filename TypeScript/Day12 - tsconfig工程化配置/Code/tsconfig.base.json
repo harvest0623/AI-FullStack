@@ -1,0 +1,37 @@
+{
+  // ─────────────────────────────────────────────────────────────
+  // tsconfig.base.json —— 基础配置（被 dev / prod / 子项目继承）
+  // 仅放「所有环境都应遵守」的约束：严格性、目标、模块、文件名一致性等
+  // 不应在此设置 outDir / sourceMap / declaration 等环境相关字段
+  // ─────────────────────────────────────────────────────────────
+  "compilerOptions": {
+    /* ========== 目标与模块 ========== */
+    "target": "ES2022",              // 编译产物 JS 的语法目标；ES2022 含 top-level await、class fields、error.cause
+    "module": "CommonJS",            // 模块系统；CommonJS 适配 Node 18 原生 require
+    "moduleResolution": "Node",      // 解析策略；Node 经典策略兼容绝大多数库
+    "lib": ["ES2022"],               // 注入的类型声明库；纯后端项目不需要 DOM
+
+    /* ========== 严格性 strict 全家桶 ========== */
+    "strict": true,                  // 总开关；等价于下列 8 项全部 true（详见 tsconfig.strict-demo.json）
+    "noImplicitAny": true,           // 禁止隐式 any；开启 strict 后由 strict 兜底，显式列出便于阅读
+    "strictNullChecks": true,        // null / undefined 不能赋给非可空类型
+    "strictFunctionTypes": true,     // 函数参数双向检查改为逆变
+    "strictBindCallApply": true,     // bind/call/apply 严格类型校验
+    "strictPropertyInitialization": true, // class 字段必须在构造函数中赋值
+    "noImplicitThis": true,          // 禁止 this 隐式为 any
+    "alwaysStrict": true,            // 产物每个文件顶部加 'use strict'
+    "useUnknownInCatchVariables": true, // catch 子句变量类型为 unknown 而非 any
+
+    /* ========== 模块解析 ========== */
+    "esModuleInterop": true,         // 允许 import fs from 'fs' 默认导入形式
+    "allowSyntheticDefaultImports": true, // 类型层允许对 CommonJS 模块使用默认导入
+    "resolveJsonModule": true,       // 允许 import data from './data.json'
+    "skipLibCheck": true,            // 跳过 .d.ts 检查以加速编译（仅类型层，不影响业务代码）
+    "forceConsistentCasingInFileNames": true, // 强制文件名大小写一致（跨平台协作必备）
+
+    /* ========== 高级 ========== */
+    "isolatedModules": true          // 每个文件可独立编译；强制使用 import type、防止 const enum 跨文件内联
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

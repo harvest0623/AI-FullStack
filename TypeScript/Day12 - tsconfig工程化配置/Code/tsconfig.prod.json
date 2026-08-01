@@ -1,0 +1,42 @@
+{
+  // ─────────────────────────────────────────────────────────────
+  // tsconfig.prod.json —— 生产环境配置
+  // 继承 base，叠加 declaration / removeComments / outDir
+  // 用法：tsc -p tsconfig.prod.json
+  // ─────────────────────────────────────────────────────────────
+  "extends": "./tsconfig.base.json",
+
+  "compilerOptions": {
+    /* ========== 产物布局 ========== */
+    "outDir": "./dist/prod",         // 生产产物目录
+    "rootDir": "./src",              // 源码根；强制 src 下文件才参与编译
+    "tsBuildInfoFile": "./.tsbuildinfo/prod.tsbuildinfo",
+
+    /* ========== 类型声明（库/SDK 必备） ========== */
+    "declaration": true,             // 为每个 .ts 生成 .d.ts
+    "declarationMap": true,          // 生成 .d.ts.map，库使用者可跳转源码
+    "emitDeclarationOnly": false,    // 既输出 JS 也输出 .d.ts；纯类型库才设 true
+
+    /* ========== 产物优化 ========== */
+    "removeComments": true,          // 移除注释，减小产物体积
+    "sourceMap": false,              // 生产不公开 sourceMap（如需上传到错误监控平台可设 true 但不入仓）
+    "noEmitOnError": true,           // 类型错误时不产出，阻断 CI 构建
+
+    /* ========== 路径别名（编译期） ========== */
+    // 注意：tsc 不会在产物 JS 中替换 paths 别名！
+    // 需配合 tsc-alias / tsconfig-paths / bundler 处理运行时解析
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@config/*": ["src/config/*"],
+      "@utils/*": ["src/utils/*"]
+    },
+
+    /* ========== 增量 ========== */
+    "incremental": true,
+    "composite": false               // 非 monorepo 子项目；若作为 references 被引用则需 true
+  },
+
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts"]
+}

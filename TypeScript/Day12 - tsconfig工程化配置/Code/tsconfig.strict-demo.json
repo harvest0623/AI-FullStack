@@ -1,0 +1,93 @@
+{
+  // ─────────────────────────────────────────────────────────────
+  // tsconfig.strict-demo.json —— strict 全家桶逐项演示
+  // 注意：本文件用于「教学对照」，实际项目应直接开 strict:true
+  // 用法：tsc -p tsconfig.strict-demo.json --noEmit
+  // ─────────────────────────────────────────────────────────────
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "lib": ["ES2022"],
+
+    // ─── strict 总开关 ───────────────────────────────────────────
+    // strict: true 一次性开启下列 8 项检查；TS 5+ 默认推荐开启
+    // 下方各项「显式列出」仅为教学对照，开启 strict 后由 strict 兜底
+    "strict": true,
+
+    // ─── 1. noImplicitAny ───────────────────────────────────────
+    // 作用：函数参数、变量在无法推断类型时禁止「隐式 any」
+    // 关闭代价：function f(x) {} 中 x 默默变成 any，类型系统对该参数
+    //   完全失效，调用方传任何值都不报错，重构时易引入运行时崩溃。
+    // 典型坑：第三方回调签名漏标注，参数静默 any 化
+    "noImplicitAny": true,
+
+    // ─── 2. strictNullChecks ────────────────────────────────────
+    // 作用：null / undefined 不能赋值给非可空类型；访问可空成员前必须收窄
+    // 关闭代价：const u: User = JSON.parse(...) 中 u 可能是 null 却被当作
+    //   非空使用，u.name 在运行时直接抛 TypeError。该选项是「空指针」
+    //   类型的第一道防线，关闭后整个类型系统对 null 的保护归零。
+    // 典型坑：Array.find 返回 T | undefined，关闭后误以为一定是 T
+    "strictNullChecks": true,
+
+    // ─── 3. strictFunctionTypes ─────────────────────────────────
+    // 作用：函数参数类型检查从「双向协变」改为「逆变」
+    // 关闭代价：const cb: (x: Animal) => void = (x: Dog) => void 这种
+    //   「需要 Animal 却只能吃 Dog」的不安全赋值被放行，运行时 cb(cat)
+    //   会调用一个期望 Dog 的函数。关闭后回调赋值失去类型保护。
+    // 典型坑：事件回调签名不匹配被静默通过
+    "strictFunctionTypes": true,
+
+    // ─── 4. strictBindCallApply ─────────────────────────────────
+    // 作用：bind / call / apply 的参数与返回值按函数签名严格校验
+    // 关闭代价：fn.call(null, 'a') 中参数个数与类型不被检查，传错也
+    //   不报错；apply 传入的数组元素类型不校验。运行时才发现参数错位。
+    // 典型坑：fn.apply(null, [1, 'x', true]) 与 fn 签名不符却不报错
+    "strictBindCallApply": true,
+
+    // ─── 5. strictPropertyInitialization ────────────────────────
+    // 作用：class 中显式声明类型的字段必须在构造函数中赋值
+    // 关闭代价：class User { name: string } 不报错，但 name 实际为
+    //   undefined，外部读取 user.name.length 在运行时崩溃。该选项
+    //   依赖 strictNullChecks 才有意义。
+    // 典型坑：依赖 DI 框架注入的属性需用 ! 显式断言或 declare
+    "strictPropertyInitialization": true,
+
+    // ─── 6. noImplicitThis ──────────────────────────────────────
+    // 作用：函数体内 this 不能隐式为 any；裸函数回调中的 this 报错
+    // 关闭代价：const o = { n: 1, get: function() { return this.n } }
+    //   解构 const g = o.get; g() 中 this 变 any，调用静默通过却返回
+    //   undefined。事件处理、jQuery 风格回调中尤其危险。
+    // 典型坑：setTimeout 回调里 this 丢失，关闭后类型层完全感知不到
+    "noImplicitThis": true,
+
+    // ─── 7. alwaysStrict ────────────────────────────────────────
+    // 作用：编译产物每个文件顶部添加 'use strict' 指令
+    // 关闭代价：产物 JS 跑在非严格模式，this 默认指向全局对象、
+    //   重复属性不报错、arguments 不与形参同步等历史坑重新出现。
+    // 注意：仅作用于「编译产物」；源码是否严格由 .js / .ts 文件自身决定
+    "alwaysStrict": true,
+
+    // ─── 8. useUnknownInCatchVariables ──────────────────────────
+    // 作用：try/catch 的 err 变量类型由 any 改为 unknown
+    // 关闭代价：catch (e) { e.message } 静默通过，但 e 可能不是
+    //   Error 对象（如 throw 'string' 或 throw {code:1}），运行时
+    //   e.message 为 undefined。开启后必须先收窄：if (e instanceof Error)
+    // 典型坑：第三方库 throw 非 Error，关闭后 e.code 误判为存在
+    "useUnknownInCatchVariables": true,
+
+    // ─── 附加严格项（不在 strict 内，但生产推荐开启） ───────────
+    "noUnusedLocals": true,          // 未使用的局部变量报错；防止死代码堆积
+    "noUnusedParameters": true,      // 未使用的函数参数报错（前缀 _ 可豁免）
+    "noImplicitReturns": true,       // 函数所有分支必须 return，防止漏返回 undefined
+    "noFallthroughCasesInSwitch": true, // switch case 必须 break / return，防止穿透
+    "noUncheckedIndexedAccess": true, // arr[i] 类型为 T | undefined，下标访问更安全
+    "exactOptionalPropertyTypes": true, // 可选属性不能被显式赋 undefined
+
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}

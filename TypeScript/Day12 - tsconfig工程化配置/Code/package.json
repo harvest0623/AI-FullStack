@@ -1,0 +1,38 @@
+{
+  "name": "day12-tsconfig-engineering",
+  "version": "1.0.0",
+  "description": "Day12 - tsconfig 工程化配置学习代码",
+  "scripts": {
+    "type-check": "tsc -p tsconfig.base.json --noEmit",
+    "type-check:dev": "tsc -p tsconfig.dev.json --noEmit",
+    "type-check:prod": "tsc -p tsconfig.prod.json --noEmit",
+    "build": "tsc -p tsconfig.prod.json",
+    "build:dev": "tsc -p tsconfig.dev.json",
+    "watch": "tsc -p tsconfig.dev.json --watch",
+    "tsc-watch": "tsc-watch -p tsconfig.dev.json --onSuccess \"node dist/dev/main.js\"",
+    "dev": "ts-node-dev --respawn --transpile-only paths-demo.ts",
+    "run:paths": "ts-node -T paths-demo.ts",
+    "build:alias": "tsc -p tsconfig.prod.json && tsc-alias -p tsconfig.prod.json"
+  },
+  "keywords": [
+    "typescript",
+    "tsconfig",
+    "engineering",
+    "project-references",
+    "paths-alias",
+    "strict-mode"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "tsc-alias": "^1.8.8",
+    "tsc-watch": "^6.2.0",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

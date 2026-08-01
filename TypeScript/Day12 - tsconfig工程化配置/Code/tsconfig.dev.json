@@ -1,0 +1,35 @@
+{
+  // ─────────────────────────────────────────────────────────────
+  // tsconfig.dev.json —— 开发环境配置
+  // 继承 base，叠加 sourceMap / watch 友好项 / 路径别名
+  // 用法：tsc -p tsconfig.dev.json --watch
+  // ─────────────────────────────────────────────────────────────
+  "extends": "./tsconfig.base.json",
+
+  "compilerOptions": {
+    /* ========== 开发期输出 ========== */
+    "outDir": "./dist/dev",          // 产物目录；与 prod 隔离避免混淆
+    "rootDir": "./",                 // 源码根；保留 dev 期相对路径
+    "sourceMap": true,               // 生成 .js.map，断点调试必备
+    "inlineSources": true,           // 将源码内联进 sourceMap，便于单文件分发调试
+    "removeComments": false,         // 保留注释便于调试产物阅读
+
+    /* ========== 路径别名（开发期） ========== */
+    "baseUrl": ".",                  // paths 解析基准；非相对模块名基于此目录
+    "paths": {
+      "@/*": ["src/*"],              // @/utils/logger → ./src/utils/logger
+      "@config/*": ["src/config/*"],
+      "@utils/*": ["src/utils/*"]
+    },
+
+    /* ========== 增量与 watch ========== */
+    "incremental": true,             // 启用增量编译，缓存 .tsbuildinfo
+    "tsBuildInfoFile": "./.tsbuildinfo/dev.tsbuildinfo",
+
+    /* ========== 交互式开发 ========== */
+    "noEmitOnError": false           // 即使有类型错误也产出 JS，避免阻塞 dev server 热更新
+  },
+
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
+}
