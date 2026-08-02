@@ -1,0 +1,45 @@
+{
+  "name": "day14-typescript-nodejs",
+  "version": "1.0.0",
+  "description": "Day14 - TypeScript 与 Node.js 学习代码",
+  "type": "commonjs",
+  "scripts": {
+    "fs": "tsx fs-typed.ts",
+    "http": "tsx http-server-typed.ts",
+    "crypto": "tsx crypto-typed.ts",
+    "error": "tsx error-handling.ts",
+    "async": "tsx async-typed.ts",
+    "esm": "tsx esm-vs-cjs.ts",
+    "fs:cjs": "ts-node fs-typed.ts",
+    "watch:fs": "tsx watch fs-typed.ts",
+    "watch:http": "tsx watch http-server-typed.ts",
+    "build": "tsc",
+    "start": "node dist/fs-typed.js",
+    "type-check": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "keywords": [
+    "typescript",
+    "nodejs",
+    "fs",
+    "http",
+    "crypto",
+    "esm",
+    "commonjs",
+    "tsx"
+  ],
+  "author": "AI-FullStack Learner",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
