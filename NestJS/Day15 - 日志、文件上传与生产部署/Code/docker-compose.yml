@@ -1,0 +1,104 @@
+# ============================================================
+# NestJS Day15 docker-compose 编排
+# 包含：app（NestJS 应用）+ mysql + redis
+# 启动：docker-compose up -d
+# 停止：docker-compose down
+# 查看日志：docker-compose logs -f app
+# ============================================================
+
+version: "3.9"
+
+services:
+  # ---------- NestJS 应用 ----------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nest-day15:latest
+    container_name: nest-day15-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=mysql
+      - REDIS_HOST=redis
+    volumes:
+      # 上传文件持久化（如使用 diskStorage）
+      - app-uploads:/app/uploads
+      # 日志持久化
+      - app-logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - nest-net
+
+  # ---------- MySQL 数据库 ----------
+  mysql:
+    image: mysql:8.0
+    container_name: nest-day15-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: ${DB_DATABASE:-nest_demo}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nest-net
+
+  # ---------- Redis 缓存/队列 ----------
+  redis:
+    image: redis:7-alpine
+    container_name: nest-day15-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - nest-net
+
+  # ---------- Nginx 反向代理 ----------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nest-day15-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - nest-net
+
+networks:
+  nest-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  app-uploads:
+  app-logs:
