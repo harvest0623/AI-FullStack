@@ -1,0 +1,47 @@
+// Prisma Schema
+//
+// 三块结构：
+//   1. datasource：连什么数据库（SQLite 文件库）
+//   2. generator：生成什么 Client（prisma-client-js）
+//   3. model：表结构（User 1 ↔ N Article）
+//
+// 改完 schema 后必须执行：
+//   npx prisma generate        # 重新生成 Client
+//   npx prisma migrate dev --name xxx  # 生成并应用迁移
+
+// 1. 数据源
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 2. Client 生成器
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 3. User 模型
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  name      String?
+  articles  Article[] // 反向关系：当前用户的所有文章
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("users") // 数据库表名
+}
+
+// 4. Article 模型
+model Article {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String?
+  viewCount Int      @default(0)
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  Int      // 外键列，必须单独定义
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("articles") // 数据库表名
+}
