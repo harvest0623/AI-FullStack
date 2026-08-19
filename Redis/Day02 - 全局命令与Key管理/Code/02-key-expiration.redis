@@ -1,0 +1,131 @@
+ECHO "============================================================"
+ECHO "文件名称: 02-key-expiration.redis"
+ECHO "文件用途: 过期机制演示"
+ECHO "          EXPIRE / PEXPIRE / EXPIREAT / PEXPIREAT"
+ECHO "          TTL / PTTL / PERSIST"
+ECHO "          演示惰性删除与定期删除"
+ECHO "执行方式: redis-cli < 02-key-expiration.redis"
+ECHO "注意：部分演示需要等待时间，建议逐段在 redis-cli 中手动执行观察"
+ECHO "============================================================"
+
+ECHO ""
+ECHO "=== 0. 清空当前库，保证演示环境干净 ==="
+FLUSHDB
+
+ECHO ""
+ECHO "=== 1. 写入一个永久 Key，TTL 返回 -1（永不过期）==="
+SET cache:product:1 "iPhone 15"
+TTL cache:product:1
+
+ECHO ""
+ECHO "=== 2. EXPIRE 设置过期（秒），TTL 查看剩余秒数 ==="
+EXPIRE cache:product:1 120
+TTL cache:product:1
+
+ECHO ""
+ECHO "=== 3. PEXPIRE 设置过期（毫秒），PTTL 查看剩余毫秒 ==="
+SET cache:product:2 "iPad Air"
+PEXPIRE cache:product:2 60000
+PTTL cache:product:2
+TTL cache:product:2
+
+ECHO ""
+ECHO "=== 4. EXPIREAT 设置过期时间点（Unix 秒时间戳）==="
+ECHO "获取当前 Unix 时间戳（秒），加 300 秒作为过期点"
+SET cache:product:3 "MacBook"
+ECHO "假设当前时间戳 +300s 后过期（请根据实际时间替换时间戳）"
+EXPIREAT cache:product:3 1999999999
+TTL cache:product:3
+
+ECHO ""
+ECHO "=== 5. PEXPIREAT 设置过期时间点（Unix 毫秒时间戳）==="
+SET cache:product:4 "Apple Watch"
+PEXPIREAT cache:product:4 1999999999000
+PTTL cache:product:4
+
+ECHO ""
+ECHO "=== 6. SET 带 EX 选项：写入同时设置过期（推荐写法）==="
+SET session:token-abc "user-1001" EX 1800
+TTL session:token-abc
+
+ECHO ""
+ECHO "=== 7. SET 带 PX 选项：写入同时设置毫秒过期 ==="
+SET session:token-def "user-1002" PX 3600000
+PTTL session:token-def
+
+ECHO ""
+ECHO "=== 8. PERSIST 移除过期，变为永久 Key ==="
+PERSIST cache:product:1
+TTL cache:product:1
+
+ECHO ""
+ECHO "=== 9. TTL 返回值含义演示 ==="
+ECHO "TTL = -1 表示 Key 存在但永不过期"
+SET cache:product:forever "never-expire"
+TTL cache:product:forever
+ECHO "TTL = -2 表示 Key 不存在"
+TTL cache:product:not-exist
+
+ECHO ""
+ECHO "=== 10. EXPIRE 对不存在的 Key 操作，返回 0（失败）==="
+EXPIRE cache:product:not-exist 60
+
+ECHO ""
+ECHO "=== 11. 惰性删除演示：过期 Key 在被访问时才删除 ==="
+ECHO "写入一个 3 秒过期的 Key"
+SET cache:product:lazy "lazy-delete-me" EX 3
+ECHO "立即 GET（此时未过期，返回值）"
+GET cache:product:lazy
+ECHO "等待 4 秒后再次 GET（此时已过期，触发惰性删除，返回 nil）"
+ECHO ">>> 请手动等待 4 秒后执行：GET cache:product:lazy  （预期返回 nil）"
+ECHO ">>> 请手动执行：EXISTS cache:product:lazy  （预期返回 0，已被惰性删除）"
+
+ECHO ""
+ECHO "=== 12. 定期删除演示：批量写入短 TTL Key，观察 DBSIZE 变化 ==="
+ECHO "写入 50 个 5 秒过期的 Key"
+SET cache:product:t1 "v" EX 5
+SET cache:product:t2 "v" EX 5
+SET cache:product:t3 "v" EX 5
+SET cache:product:t4 "v" EX 5
+SET cache:product:t5 "v" EX 5
+SET cache:product:t6 "v" EX 5
+SET cache:product:t7 "v" EX 5
+SET cache:product:t8 "v" EX 5
+SET cache:product:t9 "v" EX 5
+SET cache:product:t10 "v" EX 5
+ECHO "（这里仅演示 10 个，可自行循环写入更多）"
+ECHO "当前 DBSIZE"
+DBSIZE
+ECHO ">>> 请手动等待 6 秒后执行：DBSIZE  观察数量下降（定期删除 + 惰性删除共同作用）"
+ECHO ">>> 注意：可能不会立即归零，因为定期删除是随机抽样"
+
+ECHO ""
+ECHO "=== 13. RENAME 是否保留 TTL 的验证 ==="
+SET cache:product:rename-src "src" EX 300
+TTL cache:product:rename-src
+RENAME cache:product:rename-src cache:product:rename-dst
+TTL cache:product:rename-dst
+ECHO "结论：RENAME 会把 TTL 一并带到新 Key"
+
+ECHO ""
+ECHO "=== 14. EXPIRE 覆盖已有 TTL ==="
+SET cache:product:override "v" EX 100
+TTL cache:product:override
+EXPIRE cache:product:override 10
+TTL cache:product:override
+ECHO "结论：再次 EXPIRE 会覆盖原 TTL"
+
+ECHO ""
+ECHO "=== 15. 查看过期相关配置 ==="
+CONFIG GET hz
+CONFIG GET active-expire-effort
+
+ECHO ""
+ECHO "============================================================"
+ECHO "过期机制演示完毕。"
+ECHO "覆盖：EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT"
+ECHO "      TTL/PTTL/PERSIST"
+ECHO "      SET 的 EX/PX 选项"
+ECHO "      惰性删除与定期删除观察"
+ECHO "      RENAME 保留 TTL、EXPIRE 覆盖 TTL"
+ECHO "============================================================"

@@ -1,0 +1,145 @@
+ECHO "============================================================"
+ECHO "文件名称: 01-global-commands.redis"
+ECHO "文件用途: 全局命令与 Key 管理演示"
+ECHO "          SCAN 渐进扫描、TYPE、EXISTS、RENAME、OBJECT ENCODING、COPY 等"
+ECHO "          全程使用电商场景的 Key 演示"
+ECHO "执行方式: redis-cli < 01-global-commands.redis"
+ECHO "============================================================"
+
+ECHO ""
+ECHO "=== 0. 清空当前库，保证演示环境干净 ==="
+FLUSHDB
+
+ECHO ""
+ECHO "=== 1. 批量写入一批电商 Key，用于后续扫描演示 ==="
+MSET cache:product:1 "iPhone" cache:product:2 "iPad" cache:product:3 "MacBook"
+MSET cache:user:1001 "Alice" cache:user:1002 "Bob"
+SET session:token-aaa "user-1001"
+SET cart:1001 "pending"
+SET counter:page:views 0
+SET leaderboard:sales "tmp"
+ECHO "写入完成，查看当前库 Key 总数"
+DBSIZE
+
+ECHO ""
+ECHO "=== 2. KEYS 通配符扫描（仅调试环境，生产禁用！）==="
+ECHO "查看所有 Key"
+KEYS *
+ECHO "按前缀 cache:product: 匹配"
+KEYS cache:product:*
+ECHO "单字符通配 ?"
+KEYS cache:product:?
+ECHO "字符集合 [12]"
+KEYS cache:product:[12]
+
+ECHO ""
+ECHO "=== 3. SCAN 渐进式扫描（生产推荐）==="
+ECHO "第一次 SCAN，游标从 0 开始，COUNT 10"
+SCAN 0 MATCH * COUNT 10
+ECHO "（游标值需根据实际返回填入下一轮，这里演示单轮）"
+ECHO "按前缀匹配 SCAN"
+SCAN 0 MATCH cache:* COUNT 100
+ECHO "按类型过滤 SCAN（只看 string 类型，6.0+）"
+SCAN 0 TYPE string COUNT 100
+
+ECHO ""
+ECHO "=== 4. TYPE 查看数据类型 ==="
+TYPE cache:product:1
+TYPE counter:page:views
+
+ECHO ""
+ECHO "=== 5. EXISTS 判断 Key 是否存在（可传多个，返回存在数量）==="
+EXISTS cache:product:1
+EXISTS cache:product:9999
+EXISTS cache:product:1 cache:product:2 cache:product:9999
+
+ECHO ""
+ECHO "=== 6. DEL 同步删除（返回成功删除数量）==="
+SET cache:product:to-del "will-be-deleted"
+DEL cache:product:to-del
+EXISTS cache:product:to-del
+
+ECHO ""
+ECHO "=== 7. UNLINK 异步删除（4.0+，大 Key 推荐）==="
+SET cache:product:to-unlink "will-be-unlinked"
+UNLINK cache:product:to-unlink
+EXISTS cache:product:to-unlink
+
+ECHO ""
+ECHO "=== 8. RENAME 重命名（newkey 已存在会被覆盖）==="
+SET cache:product:old "old-value"
+SET cache:product:new "existing-new"
+RENAME cache:product:old cache:product:new
+EXISTS cache:product:old
+GET cache:product:new
+
+ECHO ""
+ECHO "=== 9. RENAMENX 仅当 newkey 不存在时重命名 ==="
+SET cache:product:old2 "old2-value"
+RENAMENX cache:product:old2 cache:product:new
+EXISTS cache:product:old2
+RENAMENX cache:product:old2 cache:product:brand-new
+EXISTS cache:product:old2
+EXISTS cache:product:brand-new
+
+ECHO ""
+ECHO "=== 10. RANDOMKEY 随机返回一个 Key ==="
+RANDOMKEY
+
+ECHO ""
+ECHO "=== 11. OBJECT ENCODING 查看底层编码 ==="
+OBJECT ENCODING cache:product:1
+OBJECT ENCODING counter:page:views
+SET cache:product:longstr "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
+OBJECT ENCODING cache:product:longstr
+
+ECHO ""
+ECHO "=== 12. OBJECT REFCOUNT 查看引用计数 ==="
+OBJECT REFCOUNT cache:product:1
+
+ECHO ""
+ECHO "=== 13. OBJECT IDLETIME 查看空闲时间（秒，需开启 LRU/LFU）==="
+OBJECT IDLETIME cache:product:1
+
+ECHO ""
+ECHO "=== 14. COPY 复制 Key（6.2+，可跨库）==="
+COPY cache:product:1 cache:product:1-copy
+EXISTS cache:product:1-copy
+GET cache:product:1-copy
+ECHO "跨库复制到 DB 1"
+COPY cache:product:2 cache:product:2-db1 DB 1
+SELECT 1
+EXISTS cache:product:2-db1
+SELECT 0
+
+ECHO ""
+ECHO "=== 15. DUMP / RESTORE 序列化与恢复（用于迁移）==="
+SET cache:product:dump-src "dump-me"
+DUMP cache:product:dump-src
+ECHO "RESTORE 需要先用 DUMP 拿到序列化字节，再恢复到新 Key"
+ECHO "（管道脚本中 DUMP 输出为二进制，RESTORE 难以直接拼接，实际多在代码中调用）"
+RESTORE cache:product:dump-dst 0 "\x00\x06dump-me\t\x00\xf4\xe5\x86\xab\x1d\x9b\x9d\x8e"
+EXISTS cache:product:dump-dst
+
+ECHO ""
+ECHO "=== 16. 多数据库 SELECT 与 MOVE 演示 ==="
+SELECT 0
+DBSIZE
+ECHO "将 cache:product:3 移动到 DB 2"
+MOVE cache:product:3 2
+EXISTS cache:product:3
+SELECT 2
+EXISTS cache:product:3
+SELECT 0
+
+ECHO ""
+ECHO "=== 17. DBSIZE 查看当前库 Key 总数 ==="
+DBSIZE
+
+ECHO ""
+ECHO "============================================================"
+ECHO "全局命令演示完毕。"
+ECHO "覆盖：KEYS/SCAN/TYPE/EXISTS/DEL/UNLINK/RENAME/RENAMENX"
+ECHO "      RANDOMKEY/OBJECT ENCODING/REFCOUNT/IDLETIME"
+ECHO "      COPY/DUMP/RESTORE/SELECT/MOVE/DBSIZE"
+ECHO "============================================================"
