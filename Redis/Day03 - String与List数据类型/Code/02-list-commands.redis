@@ -1,0 +1,179 @@
+ECHO "============================================================"
+ECHO "文件名称: 02-list-commands.redis"
+ECHO "文件用途: List 类型全部命令演示"
+ECHO "          LPUSH/RPUSH、LPOP/RPOP、LRANGE、BLPOP/BRPOP、LMOVE"
+ECHO "          应用场景：最新订单列表、消息队列、固定长度列表 LTRIM"
+ECHO "执行方式: redis-cli < 02-list-commands.redis"
+ECHO "注意：BLPOP/BRPOP 为阻塞命令，建议部分演示在独立终端手动执行"
+ECHO "============================================================"
+
+ECHO ""
+ECHO "=== 0. 清空当前库 ==="
+FLUSHDB
+
+ECHO ""
+ECHO "=== 1. LPUSH / RPUSH 左右端插入 ==="
+ECHO "LPUSH 从左端插入 order-1 order-2 order-3（注意：批量插入顺序反转）"
+LPUSH latest:orders "order-1" "order-2" "order-3"
+ECHO "RPUSH 从右端插入 order-4 order-5"
+RPUSH latest:orders "order-4" "order-5"
+ECHO "查看全部（LRANGE 0 -1）"
+LRANGE latest:orders 0 -1
+LLEN latest:orders
+
+ECHO ""
+ECHO "=== 2. LPUSHX / RPUSHX 仅当 Key 存在时插入 ==="
+LPUSHX latest:orders "order-6"
+RPUSHX not-exist-list "won't-insert"
+LRANGE latest:orders 0 -1
+ECHO "对不存在的 Key 用 PUSHX 不会创建"
+
+ECHO ""
+ECHO "=== 3. LPOP / RPOP 弹出两端元素 ==="
+LPOP latest:orders
+RPOP latest:orders
+LRANGE latest:orders 0 -1
+ECHO "LPOP count 一次弹多个（6.2+）"
+RPUSH test:list "a" "b" "c" "d" "e"
+LPOP test:list 2
+LRANGE test:list 0 -1
+
+ECHO ""
+ECHO "=== 4. LRANGE 范围查询（闭区间，支持负索引）==="
+RPUSH demo:list "A" "B" "C" "D" "E"
+LRANGE demo:list 0 -1
+LRANGE demo:list 0 2
+LRANGE demo:list -3 -1
+
+ECHO ""
+ECHO "=== 5. LINDEX 按索引取元素 ==="
+LINDEX demo:list 0
+LINDEX demo:list -1
+LINDEX demo:list 10
+ECHO "索引越界返回 nil"
+
+ECHO ""
+ECHO "=== 6. LSET 修改指定索引元素 ==="
+LSET demo:list 2 "C-updated"
+LRANGE demo:list 0 -1
+
+ECHO ""
+ECHO "=== 7. LLEN 查看列表长度 ==="
+LLEN demo:list
+
+ECHO ""
+ECHO "=== 8. LINSERT 在 pivot 前/后插入 ==="
+LINSERT demo:list BEFORE "B" "B-before"
+LINSERT demo:list AFTER "D" "D-after"
+LRANGE demo:list 0 -1
+
+ECHO ""
+ECHO "=== 9. LREM 删除指定元素（count 控制方向与数量）==="
+RPUSH rem:list "x" "y" "x" "y" "x" "y"
+ECHO "count > 0 从头开始删 2 个 x"
+LREM rem:list 2 "x"
+LRANGE rem:list 0 -1
+ECHO "count < 0 从尾开始删 1 个 y"
+LREM rem:list -1 "y"
+LRANGE rem:list 0 -1
+ECHO "count = 0 删除全部 x"
+LREM rem:list 0 "x"
+LRANGE rem:list 0 -1
+
+ECHO ""
+ECHO "=== 10. LTRIM 只保留指定范围（固定长度列表利器）==="
+RPUSH trim:list "1" "2" "3" "4" "5" "6" "7" "8"
+ECHO "LTRIM 0 4 只保留前 5 个"
+LTRIM trim:list 0 4
+LRANGE trim:list 0 -1
+LLEN trim:list
+
+ECHO ""
+ECHO "=== 11. 应用场景一：最新订单列表（LPUSH + LTRIM）==="
+ECHO "模拟新订单产生，始终保留最新 5 条"
+LPUSH latest:orders:5 "order-100"
+LTRIM latest:orders:5 0 4
+LPUSH latest:orders:5 "order-101"
+LTRIM latest:orders:5 0 4
+LPUSH latest:orders:5 "order-102" "order-103" "order-104" "order-105" "order-106"
+LTRIM latest:orders:5 0 4
+ECHO "查看最新订单（最前的为最新）"
+LRANGE latest:orders:5 0 -1
+LLEN latest:orders:5
+
+ECHO ""
+ECHO "=== 12. 应用场景二：消息队列（LPUSH 生产 + RPOP 消费，FIFO）==="
+ECHO "生产者投递 3 条订单消息"
+LPUSH queue:orders "order-msg-1"
+LPUSH queue:orders "order-msg-2"
+LPUSH queue:orders "order-msg-3"
+ECHO "消费者 RPOP 消费（先进先出）"
+RPOP queue:orders
+RPOP queue:orders
+RPOP queue:orders
+ECHO "队列已空，RPOP 返回 nil"
+RPOP queue:orders
+
+ECHO ""
+ECHO "=== 13. 应用场景三：栈（LPUSH + LPOP，后进先出）==="
+LPUSH stack:ops "op-1" "op-2" "op-3"
+LPOP stack:ops
+LPOP stack:ops
+LPOP stack:ops
+
+ECHO ""
+ECHO "=== 14. RPOPLPUSH 旧命令：从 source 右弹并左推到 dest ==="
+RPUSH src:list "a" "b" "c"
+RPOPLPUSH src:list dest:list
+LRANGE src:list 0 -1
+LRANGE dest:list 0 -1
+
+ECHO ""
+ECHO "=== 15. LMOVE 灵活迁移元素（6.2+，替代 RPOPLPUSH）==="
+ECHO "LMOVE source dest RIGHT LEFT：从 source 右端取，推到 dest 左端"
+RPUSH src:list2 "1" "2" "3"
+LMOVE src:list2 dest:list2 RIGHT LEFT
+LRANGE src:list2 0 -1
+LRANGE dest:list2 0 -1
+
+ECHO ""
+ECHO "=== 16. 应用场景四：安全队列（LMOVE 到处理中列表）==="
+ECHO "生产者投递任务"
+LPUSH queue:tasks "task-1" "task-2"
+ECHO "消费者用 LMOVE 原子取走任务到 processing 列表"
+LMOVE queue:tasks processing:tasks RIGHT LEFT
+LMOVE queue:tasks processing:tasks RIGHT LEFT
+ECHO "原队列已空"
+LRANGE queue:tasks 0 -1
+ECHO "处理中列表"
+LRANGE processing:tasks 0 -1
+ECHO "处理完成后从 processing 列表删除，避免消息丢失"
+
+ECHO ""
+ECHO "=== 17. BLPOP / BRPOP 阻塞弹出（建议在独立终端演示）==="
+ECHO ">>> BLPOP queue:demo 30  会阻塞最多 30 秒等待元素"
+ECHO ">>> BRPOP queue:demo 30  同理从右端阻塞等待"
+ECHO ">>> 在另一个终端执行 LPUSH queue:demo 'hello' 即可解除阻塞"
+ECHO ">>> 这里仅用 0 超时演示非阻塞行为"
+BLPOP queue:demo 0
+ECHO "（队列为空且超时 0，立即返回 nil）"
+
+ECHO ""
+ECHO "=== 18. BLMOVE 阻塞迁移（6.2+）==="
+ECHO ">>> BLMOVE queue:src queue:dst RIGHT LEFT 30  阻塞等待 source 有元素"
+ECHO ">>> 建议在独立终端演示"
+
+ECHO ""
+ECHO "=== 19. OBJECT ENCODING 查看底层编码 ==="
+RPUSH small:list "a" "b" "c"
+OBJECT ENCODING small:list
+ECHO "小列表为 listpack 编码；元素多/大时转为 quicklist"
+
+ECHO ""
+ECHO "============================================================"
+ECHO "List 类型演示完毕。"
+ECHO "覆盖：LPUSH/RPUSH/LPUSHX/RPUSHX、LPOP/RPOP"
+ECHO "      LRANGE/LINDEX/LSET/LLEN、LINSERT/LREM/LTRIM"
+ECHO "      RPOPLPUSH/LMOVE、BLPOP/BRPOP/BLMOVE"
+ECHO "      应用场景：最新订单、消息队列、栈、安全队列"
+ECHO "============================================================"

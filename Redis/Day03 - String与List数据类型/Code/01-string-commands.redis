@@ -1,0 +1,177 @@
+ECHO "============================================================"
+ECHO "文件名称: 01-string-commands.redis"
+ECHO "文件用途: String 类型全部命令演示"
+ECHO "          SET 各种选项、INCR 计数器、MSET/MGET、GETRANGE/SETRANGE"
+ECHO "          应用场景：缓存商品名、页面浏览量计数、限流计数器"
+ECHO "执行方式: redis-cli < 01-string-commands.redis"
+ECHO "============================================================"
+
+ECHO ""
+ECHO "=== 0. 清空当前库 ==="
+FLUSHDB
+
+ECHO ""
+ECHO "=== 1. SET / GET 基本写入读取（缓存商品名）==="
+SET cache:product:1 "iPhone 15"
+GET cache:product:1
+
+ECHO ""
+ECHO "=== 2. SET EX 选项：写入同时设过期（缓存推荐写法）==="
+SET cache:product:2 "MacBook Pro" EX 3600
+TTL cache:product:2
+
+ECHO ""
+ECHO "=== 3. SET PX 选项：毫秒级过期 ==="
+SET cache:product:3 "iPad Air" PX 600000
+PTTL cache:product:3
+
+ECHO ""
+ECHO "=== 4. SET NX 选项：仅当 Key 不存在时写入（分布式锁基础）==="
+SET stock:lock:product-1 "token-aaa" NX EX 30
+SET stock:lock:product-1 "token-bbb" NX EX 30
+ECHO "第二次 NX 写入应返回 nil（Key 已存在）"
+
+ECHO ""
+ECHO "=== 5. SET XX 选项：仅当 Key 已存在时写入（更新场景）==="
+SET cache:product:999 "not-exists-first" XX
+ECHO "对不存在的 Key 用 XX，返回 nil"
+SET cache:product:1 "iPhone 15 Pro" XX
+GET cache:product:1
+
+ECHO ""
+ECHO "=== 6. SET KEEPTTL 选项：更新值但保留原 TTL（6.0+）==="
+SET cache:product:4 "Apple Watch" EX 600
+TTL cache:product:4
+SET cache:product:4 "Apple Watch Ultra" KEEPTTL
+GET cache:product:4
+TTL cache:product:4
+ECHO "TTL 未被重置，仍接近原值"
+
+ECHO ""
+ECHO "=== 7. SET GET 选项：写入新值并返回旧值（6.2+）==="
+SET cache:product:1 "iPhone 15 Pro Max" GET
+
+ECHO ""
+ECHO "=== 8. GETSET 旧命令（等价 SET ... GET）==="
+GETSET cache:product:1 "iPhone 16"
+GET cache:product:1
+
+ECHO ""
+ECHO "=== 9. GETDEL 删除并返回旧值（6.2+）==="
+SET cache:product:temp "tmp-value"
+GETDEL cache:product:temp
+EXISTS cache:product:temp
+
+ECHO ""
+ECHO "=== 10. GETEX 获取值并设置过期（6.2+）==="
+SET cache:product:5 "AirPods"
+GETEX cache:product:5 EX 120
+TTL cache:product:5
+
+ECHO ""
+ECHO "=== 11. SETEX / PSETEX / SETNX 旧命令演示（已弃用，了解即可）==="
+SETEX cache:product:6 300 "old-setex"
+TTL cache:product:6
+PSETEX cache:product:7 300000 "old-psetex"
+PTTL cache:product:7
+SETNX cache:product:8 "first-setnx"
+SETNX cache:product:8 "second-setnx"
+GET cache:product:8
+
+ECHO ""
+ECHO "=== 12. MSET / MGET 批量操作（减少网络往返）==="
+MSET cache:product:10 "P10" cache:product:11 "P11" cache:product:12 "P12"
+MGET cache:product:10 cache:product:11 cache:product:12 cache:product:9999
+
+ECHO ""
+ECHO "=== 13. APPEND 追加与 STRLEN 长度 ==="
+SET cache:product:20 "Redis"
+APPEND cache:product:20 " 学习手册"
+GET cache:product:20
+STRLEN cache:product:20
+
+ECHO ""
+ECHO "=== 14. GETRANGE 截取子串（闭区间，支持负索引）==="
+SET cache:product:21 "Hello Redis World"
+GETRANGE cache:product:21 0 4
+GETRANGE cache:product:21 6 10
+GETRANGE cache:product:21 -5 -1
+
+ECHO ""
+ECHO "=== 15. SETRANGE 从 offset 覆写 ==="
+SET cache:product:22 "Hello World"
+SETRANGE cache:product:22 6 "Redis"
+GET cache:product:22
+
+ECHO ""
+ECHO "=== 16. INCR / DECR 原子计数器（页面浏览量 PV）==="
+SET counter:page:views:home 0
+INCR counter:page:views:home
+INCR counter:page:views:home
+INCR counter:page:views:home
+DECR counter:page:views:home
+GET counter:page:views:home
+
+ECHO ""
+ECHO "=== 17. INCRBY / DECRBY 指定步长 ==="
+INCRBY counter:page:views:home 100
+DECRBY counter:page:views:home 5
+GET counter:page:views:home
+
+ECHO ""
+ECHO "=== 18. INCRBYFLOAT 浮点递增（如商品价格微调）==="
+SET cache:product:price:1 999.00
+INCRBYFLOAT cache:product:price:1 0.50
+INCRBYFLOAT cache:product:price:1 -10.25
+GET cache:product:price:1
+
+ECHO ""
+ECHO "=== 19. INCR 对非整数操作会报错 ==="
+SET cache:product:str "abc"
+ECHO ">>> 执行 INCR cache:product:str 会报错：(error) ERR value is not an integer or out of range"
+
+ECHO ""
+ECHO "=== 20. 应用场景一：缓存 JSON 对象 ==="
+SET cache:product:100 '{"id":100,"name":"iPhone","price":5999,"stock":1000}'
+GET cache:product:100
+STRLEN cache:product:100
+
+ECHO ""
+ECHO "=== 21. 应用场景二：限流计数器（固定窗口，每秒 10 次）==="
+ECHO "模拟用户 1001 调用 order 接口 3 次"
+INCR rate:limit:user:1001:order
+EXPIRE rate:limit:user:1001:order 1
+INCR rate:limit:user:1001:order
+INCR rate:limit:user:1001:order
+GET rate:limit:user:1001:order
+TTL rate:limit:user:1001:order
+ECHO "若计数 > 10 则拒绝请求；1 秒后 Key 自动过期，窗口重置"
+
+ECHO ""
+ECHO "=== 22. 应用场景三：ID 生成器（订单号自增）==="
+INCR id:generator:order
+INCR id:generator:order
+INCR id:generator:order
+ECHO "每生成一个订单，ID +1，原子递增"
+
+ECHO ""
+ECHO "=== 23. 应用场景四：分布式锁基础（SET NX EX）==="
+SET stock:lock:product-1001 "token-uuid-aaa" NX EX 30
+ECHO "持锁方需在 30 秒内完成业务并 DEL 释放"
+ECHO ">>> 释放锁需用 Lua 脚本校验 token，Day08/Day11 详讲"
+
+ECHO ""
+ECHO "=== 24. OBJECT ENCODING 查看底层编码 ==="
+OBJECT ENCODING cache:product:1
+OBJECT ENCODING counter:page:views:home
+SET cache:product:longstr "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
+OBJECT ENCODING cache:product:longstr
+
+ECHO ""
+ECHO "============================================================"
+ECHO "String 类型演示完毕。"
+ECHO "覆盖：SET 的 EX/PX/NX/XX/KEEPTTL/GET 选项、GET 家族"
+ECHO "      MSET/MGET、APPEND/STRLEN/GETRANGE/SETRANGE"
+ECHO "      INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT"
+ECHO "      应用场景：缓存JSON、PV计数、限流、ID生成、分布式锁基础"
+ECHO "============================================================"
