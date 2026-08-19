@@ -1,0 +1,82 @@
+ECHO "============================================================"
+ECHO "文件名称: 00-environment-check.redis"
+ECHO "文件用途: Redis 环境检查脚本"
+ECHO "          查看 PING、版本、内存、配置、数据库数量、SELECT 切换"
+ECHO "          用于确认 Redis 7.0+ 环境是否就绪"
+ECHO "执行方式: redis-cli < 00-environment-check.redis"
+ECHO "          或在 redis-cli 中逐行复制粘贴"
+ECHO "============================================================"
+
+ECHO ""
+ECHO "=== 1. 测试连通性 PING（返回 PONG 表示服务正常）==="
+PING
+
+ECHO ""
+ECHO "=== 2. 查看 Redis 服务端基本信息（版本、运行模式、OS）==="
+INFO server
+
+ECHO ""
+ECHO "=== 3. 查看内存使用情况（used_memory / maxmemory）==="
+INFO memory
+
+ECHO ""
+ECHO "=== 4. 查看客户端连接统计 ==="
+INFO clients
+
+ECHO ""
+ECHO "=== 5. 查看关键配置：最大内存上限 ==="
+CONFIG GET maxmemory
+
+ECHO ""
+ECHO "=== 6. 查看关键配置：最大内存淘汰策略 ==="
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "=== 7. 查看关键配置：数据库数量（默认 16，即 0-15）==="
+CONFIG GET databases
+
+ECHO ""
+ECHO "=== 8. 查看关键配置：监听端口 ==="
+CONFIG GET port
+
+ECHO ""
+ECHO "=== 9. 查看关键配置：是否开启 AOF 持久化 ==="
+CONFIG GET appendonly
+
+ECHO ""
+ECHO "=== 10. 查看当前所在数据库（CLIENT LIST 中的 db 字段）==="
+CLIENT INFO
+
+ECHO ""
+ECHO "=== 11. 切换到 DB 0，查看 Key 数量（默认进入 DB 0）==="
+SELECT 0
+DBSIZE
+
+ECHO ""
+ECHO "=== 12. 切换到 DB 1，查看 Key 数量（应为 0，数据库间隔离）==="
+SELECT 1
+DBSIZE
+
+ECHO ""
+ECHO "=== 13. 切换到 DB 15（最后一个数据库）==="
+SELECT 15
+DBSIZE
+
+ECHO ""
+ECHO "=== 14. 切回 DB 0，准备后续练习 ==="
+SELECT 0
+DBSIZE
+
+ECHO ""
+ECHO "=== 15. 查看 Redis 时间（服务器 Unix 时间戳与微秒）==="
+TIME
+
+ECHO ""
+ECHO "=== 16. 查看命令统计（已执行命令次数）==="
+INFO commandstats
+
+ECHO ""
+ECHO "============================================================"
+ECHO "环境检查完毕。"
+ECHO "若 PING 返回 PONG、redis_version >= 7.0，则环境合格。"
+ECHO "============================================================"

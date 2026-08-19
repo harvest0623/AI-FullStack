@@ -1,0 +1,127 @@
+ECHO "============================================================"
+ECHO "文件名称: 01-hello-redis.redis"
+ECHO "文件用途: 第一个 Redis 命令演示"
+ECHO "          SET / GET / DEL / EXISTS / EXPIRE / TTL 等基础流程"
+ECHO "          全程使用电商场景的 Key 演示"
+ECHO "执行方式: redis-cli < 01-hello-redis.redis"
+ECHO "============================================================"
+
+ECHO ""
+ECHO "=== 0. 清空当前库，保证演示环境干净（仅开发调试用）==="
+FLUSHDB
+
+ECHO ""
+ECHO "=== 1. SET / GET 基本写入与读取 ==="
+ECHO "写入商品缓存 cache:product:1"
+SET cache:product:1 "iPhone 15"
+ECHO "读取该商品"
+GET cache:product:1
+
+ECHO ""
+ECHO "=== 2. 写入用户信息缓存 ==="
+SET cache:user:1001 "Alice"
+GET cache:user:1001
+
+ECHO ""
+ECHO "=== 3. EXISTS 判断 Key 是否存在（返回 1 存在，0 不存在）==="
+EXISTS cache:product:1
+EXISTS cache:product:9999
+
+ECHO ""
+ECHO "=== 4. TYPE 查看 Key 的数据类型（基础类型为 string）==="
+TYPE cache:product:1
+
+ECHO ""
+ECHO "=== 5. DEL 删除 Key（返回成功删除的数量）==="
+DEL cache:user:1001
+EXISTS cache:user:1001
+
+ECHO ""
+ECHO "=== 6. EXPIRE 设置过期时间（秒），TTL 查看剩余秒数 ==="
+SET cache:product:2 "MacBook Pro"
+EXPIRE cache:product:2 120
+TTL cache:product:2
+
+ECHO ""
+ECHO "=== 7. PEXPIRE 设置过期时间（毫秒），PTTL 查看剩余毫秒 ==="
+SET cache:product:3 "iPad Air"
+PEXPIRE cache:product:3 60000
+PTTL cache:product:3
+
+ECHO ""
+ECHO "=== 8. PERSIST 移除过期，使其变为永久 Key ==="
+PERSIST cache:product:2
+TTL cache:product:2
+
+ECHO ""
+ECHO "=== 9. SET 带 EX 选项：写入同时设置过期（推荐写法）==="
+SET session:token-abc-123 "user-1001" EX 1800
+TTL session:token-abc-123
+
+ECHO ""
+ECHO "=== 10. SET NX 选项：仅当 Key 不存在时写入（分布式锁基础）==="
+SET stock:lock:product-1 "locked" NX EX 30
+SET stock:lock:product-1 "another-try" NX EX 30
+
+ECHO ""
+ECHO "=== 11. SET XX 选项：仅当 Key 已存在时写入（更新场景）==="
+SET cache:product:4 "exists-first" XX
+SET cache:product:1 "iPhone 15 Pro" XX
+GET cache:product:1
+
+ECHO ""
+ECHO "=== 12. SET GET 选项：写入新值并返回旧值（6.2+）==="
+SET cache:product:1 "iPhone 15 Pro Max" GET
+
+ECHO ""
+ECHO "=== 13. STRLEN 查看 String 值的字节长度 ==="
+STRLEN cache:product:1
+
+ECHO ""
+ECHO "=== 14. APPEND 追加内容到 String 末尾 ==="
+SET cache:product:5 "Redis"
+APPEND cache:product:5 " 学习手册"
+GET cache:product:5
+
+ECHO ""
+ECHO "=== 15. INCR / DECR 原子计数器（页面浏览量）==="
+SET counter:page:views:home 0
+INCR counter:page:views:home
+INCR counter:page:views:home
+INCR counter:page:views:home
+DECR counter:page:views:home
+GET counter:page:views:home
+
+ECHO ""
+ECHO "=== 16. INCRBY 指定步长递增 ==="
+INCRBY counter:page:views:home 100
+GET counter:page:views:home
+
+ECHO ""
+ECHO "=== 17. MSET / MGET 批量写入与读取（减少网络往返）==="
+MSET cache:product:10 "P1" cache:product:11 "P2" cache:product:12 "P3"
+MGET cache:product:10 cache:product:11 cache:product:12
+
+ECHO ""
+ECHO "=== 18. RENAME 重命名 Key ==="
+SET cache:product:old "to-be-renamed"
+RENAME cache:product:old cache:product:new
+EXISTS cache:product:old
+EXISTS cache:product:new
+
+ECHO ""
+ECHO "=== 19. DBSIZE 查看当前库 Key 总数 ==="
+DBSIZE
+
+ECHO ""
+ECHO "=== 20. OBJECT ENCODING 查看底层编码 ==="
+OBJECT ENCODING cache:product:1
+OBJECT ENCODING counter:page:views:home
+
+ECHO ""
+ECHO "============================================================"
+ECHO "第一个 Redis 命令演示完毕。"
+ECHO "覆盖：SET/GET/DEL/EXISTS/TYPE/EXPIRE/PEXPIRE/TTL/PTTL/PERSIST"
+ECHO "      SET 的 EX/NX/XX/GET 选项、STRLEN/APPEND/INCR/INCRBY"
+ECHO "      MSET/MGET、RENAME、DBSIZE、OBJECT ENCODING"
+ECHO "============================================================"
