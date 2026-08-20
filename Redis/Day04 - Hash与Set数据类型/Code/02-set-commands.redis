@@ -1,0 +1,219 @@
+ECHO "============================================================"
+ECHO "文件名称: 02-set-commands.redis"
+ECHO "文件用途: Set 类型全部命令演示"
+ECHO "          SADD/SREM/SMEMBERS、SDIFF/SINTER/SUNION 集合运算"
+ECHO "          应用场景：用户标签 tags:user:1、共同关注 SINTER、抽奖 SPOP、商品分类去重"
+ECHO "执行方式: redis-cli < 02-set-commands.redis"
+ECHO "============================================================"
+
+ECHO ""
+ECHO "=== 0. 清空当前库 ==="
+FLUSHDB
+
+ECHO ""
+ECHO "=== 1. SADD 添加元素（已存在的会被忽略）==="
+SADD tags:user:1 "vip" "active" "north"
+SADD tags:user:1 "vip" "new"
+ECHO "查看类型"
+TYPE tags:user:1
+
+ECHO ""
+ECHO "=== 2. SMEMBERS 返回所有元素 ==="
+SMEMBERS tags:user:1
+
+ECHO ""
+ECHO "=== 3. SISMEMBER 判断是否成员（返回 0/1）==="
+SISMEMBER tags:user:1 "vip"
+SISMEMBER tags:user:1 "south"
+
+ECHO ""
+ECHO "=== 4. SCARD 集合元素数量 ==="
+SCARD tags:user:1
+
+ECHO ""
+ECHO "=== 5. SREM 移除元素 ==="
+SREM tags:user:1 "new"
+SMEMBERS tags:user:1
+
+ECHO ""
+ECHO "=== 6. SMOVE 把元素从 source 移到 dest ==="
+SADD src:set "a" "b" "c"
+SMOVE src:set dest:set "b"
+SMEMBERS src:set
+SMEMBERS dest:set
+
+ECHO ""
+ECHO "=== 7. SPOP 随机弹出（删除）元素 ==="
+SADD pop:set "x" "y" "z" "w"
+ECHO "随机弹出 1 个"
+SPOP pop:set 1
+ECHO "随机弹出 2 个"
+SPOP pop:set 2
+ECHO "剩余元素"
+SMEMBERS pop:set
+
+ECHO ""
+ECHO "=== 8. SRANDMEMBER 随机返回（不删除）元素 ==="
+SADD rand:set "a" "b" "c" "d" "e"
+ECHO "随机返回 1 个"
+SRANDMEMBER rand:set
+ECHO "随机返回 2 个（不删除）"
+SRANDMEMBER rand:set 2
+ECHO "负数 count 允许重复返回"
+SRANDMEMBER rand:set -5
+ECHO "集合未被修改，仍为 5 个"
+SCARD rand:set
+
+ECHO ""
+ECHO "=== 9. 集合运算准备：三个集合 ==="
+SADD set:A "1" "2" "3" "4" "5"
+SADD set:B "3" "4" "5" "6" "7"
+SADD set:C "5" "6" "7" "8" "9"
+
+ECHO ""
+ECHO "=== 10. SDIFF 差集（第一个有、其余没有）==="
+ECHO "A - B"
+SDIFF set:A set:B
+ECHO "A - B - C"
+SDIFF set:A set:B set:C
+
+ECHO ""
+ECHO "=== 11. SDIFFSTORE 差集存到新集合 ==="
+SDIFFSTORE diff:result set:A set:B
+SMEMBERS diff:result
+
+ECHO ""
+ECHO "=== 12. SINTER 交集 ==="
+ECHO "A ∩ B"
+SINTER set:A set:B
+ECHO "A ∩ B ∩ C"
+SINTER set:A set:B set:C
+
+ECHO ""
+ECHO "=== 13. SINTERSTORE 交集存到新集合 ==="
+SINTERSTORE inter:result set:A set:B
+SMEMBERS inter:result
+
+ECHO ""
+ECHO "=== 14. SINTERCARD 仅返回交集数量（7.0+，不返回元素）==="
+SINTERCARD 2 set:A set:B
+SINTERCARD 3 set:A set:B set:C
+ECHO "LIMIT 限制计算数量"
+SINTERCARD 2 set:A set:B LIMIT 1
+
+ECHO ""
+ECHO "=== 15. SUNION 并集 ==="
+ECHO "A ∪ B"
+SUNION set:A set:B
+ECHO "A ∪ B ∪ C"
+SUNION set:A set:B set:C
+
+ECHO ""
+ECHO "=== 16. SUNIONSTORE 并集存到新集合 ==="
+SUNIONSTORE union:result set:A set:B
+SMEMBERS union:result
+
+ECHO ""
+ECHO "=== 17. SSCAN 渐进扫描元素 ==="
+SSCAN set:A 0 COUNT 100
+
+ECHO ""
+ECHO "=== 18. 应用场景一：用户标签 tags:user:{id} ==="
+SADD tags:user:1001 "vip" "active" "high-value"
+SADD tags:user:1002 "active" "new"
+SADD tags:user:1003 "vip" "inactive"
+ECHO "查看用户 1001 的标签"
+SMEMBERS tags:user:1001
+ECHO "判断用户 1001 是否为 vip"
+SISMEMBER tags:user:1001 "vip"
+ECHO "移除用户 1001 的 high-value 标签"
+SREM tags:user:1001 "high-value"
+SMEMBERS tags:user:1001
+
+ECHO ""
+ECHO "=== 19. 应用场景二：商品标签 tags:product:{id} ==="
+SADD tags:product:1001 "phone" "apple" "5g"
+SADD tags:product:1002 "phone" "android" "5g"
+SADD tags:product:1003 "laptop" "apple"
+ECHO "查找同时是 phone 且 5g 的商品（交集）"
+SINTER tags:product:1001 tags:product:1002
+ECHO "查找是 apple 但非 phone 的商品（差集）"
+SDIFF tags:product:1003 tags:product:1001
+
+ECHO ""
+ECHO "=== 20. 应用场景三：共同关注 following:{user_id} ==="
+ECHO "用户 1001 关注：2001 2002 2003 2005"
+SADD following:1001 2001 2002 2003 2005
+ECHO "用户 1002 关注：2002 2003 2004"
+SADD following:1002 2002 2003 2004
+ECHO "共同关注（交集）"
+SINTER following:1001 following:1002
+ECHO "共同关注数量（SINTERCARD，7.0+）"
+SINTERCARD 2 following:1001 following:1002
+ECHO "1001 关注但 1002 未关注（差集，可用于推荐）"
+SDIFF following:1001 following:1002
+ECHO "1002 关注但 1001 未关注"
+SDIFF following:1002 following:1001
+ECHO "两人关注并集"
+SUNION following:1001 following:1002
+
+ECHO ""
+ECHO "=== 21. 应用场景四：去重（UV 集合） ==="
+ECHO "页面 home 当日 UV：用户 1001 1002 1003 访问"
+SADD uv:page:home:20240101 1001 1002 1003
+ECHO "用户 1002 再次访问（自动去重）"
+SADD uv:page:home:20240101 1002
+ECHO "UV 数量"
+SCARD uv:page:home:20240101
+ECHO "（注意：Set 存 UV 在用户量大时内存高，HyperLogLog 更省，Day06 详讲）"
+
+ECHO ""
+ECHO "=== 22. 应用场景五：抽奖 lottery:{activity} ==="
+SADD lottery:activity-1 "user-A" "user-B" "user-C" "user-D" "user-E" "user-F"
+ECHO "参与人数"
+SCARD lottery:activity-1
+ECHO "随机推荐 2 名（不删除，可重复推荐）"
+SRANDMEMBER lottery:activity-1 2
+ECHO "一等奖抽 1 名（SPOP 删除，不可重复抽）"
+SPOP lottery:activity-1 1
+ECHO "二等奖抽 2 名"
+SPOP lottery:activity-1 2
+ECHO "剩余参与人数"
+SCARD lottery:activity-1
+ECHO "剩余参与者"
+SMEMBERS lottery:activity-1
+
+ECHO ""
+ECHO "=== 23. 应用场景六：黑白名单 ==="
+SADD blacklist "user-spam-1" "user-fraud-2"
+SISMEMBER blacklist "user-spam-1"
+SISMEMBER blacklist "user-normal-3"
+ECHO "在黑名单中返回 1，拒绝访问；返回 0 放行"
+
+ECHO ""
+ECHO "=== 24. 应用场景七：商品分类去重 ==="
+ECHO "用户浏览过多个商品分类，去重后统计兴趣"
+SADD history:category:user:1001 "phone" "laptop" "phone" "book" "laptop"
+ECHO "去重后的分类"
+SMEMBERS history:category:user:1001
+ECHO "兴趣分类数量"
+SCARD history:category:user:1001
+
+ECHO ""
+ECHO "=== 25. OBJECT ENCODING 查看底层编码 ==="
+ECHO "全整数小集合为 intset"
+SADD int:set 1 2 3 4 5
+OBJECT ENCODING int:set
+ECHO "含非整数为 hashtable/listpack"
+SADD str:set "a" "b" "c"
+OBJECT ENCODING str:set
+
+ECHO ""
+ECHO "============================================================"
+ECHO "Set 类型演示完毕。"
+ECHO "覆盖：SADD/SREM/SMEMBERS/SISMEMBER/SCARD"
+ECHO "      SPOP/SRANDMEMBER/SMOVE"
+ECHO "      SDIFF/SINTER/SUNION 及 STORE 变体、SINTERCARD"
+ECHO "      SSCAN、OBJECT ENCODING"
+ECHO "      应用场景：用户标签、商品标签、共同关注、去重UV、抽奖、黑白名单、分类去重"
+ECHO "============================================================"
