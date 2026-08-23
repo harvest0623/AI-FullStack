@@ -1,0 +1,141 @@
+# ============================================================
+# 文件用途：Geo 地理位置演示（门店位置 / 距离 / 附近搜索）
+# 场景：电商平台线下门店搜索、距离计算、商圈搜索
+# 执行方式：redis-cli < 03-geo-demo.redis
+#           或进入 redis-cli 后逐行复制粘贴
+# 适用版本：Redis 7.0+
+# 说明：经纬度顺序为 [经度 longitude, 纬度 latitude]
+# ============================================================
+
+# 清理本次演示涉及的 Key
+DEL geo:stores geo:stores:nearby
+
+
+ECHO "=== 1. GEOADD 添加门店位置（北京主要商圈） ==="
+
+ECHO "--- 添加 6 个门店（经度 纬度 门店ID） ---"
+GEOADD geo:stores 116.4074 39.9042 "store:sanlitun"
+GEOADD geo:stores 116.4644 39.9080 "store:guomao"
+GEOADD geo:stores 116.3368 39.9980 "store:wudaokou"
+GEOADD geo:stores 116.3100 39.9910 "store:zhongguancun"
+GEOADD geo:stores 116.4145 39.9150 "store:wangfujing"
+GEOADD geo:stores 116.3300 40.0100 "store:shangdi"
+
+ECHO "--- 一次添加多个点（更高效） ---"
+DEL geo:stores
+GEOADD geo:stores 116.4074 39.9042 "store:sanlitun" 116.4644 39.9080 "store:guomao" 116.3368 39.9980 "store:wudaokou" 116.3100 39.9910 "store:zhongguancun" 116.4145 39.9150 "store:wangfujing" 116.3300 40.0100 "store:shangdi"
+
+
+ECHO "=== 2. GEOPOS 获取门店经纬度 ==="
+
+ECHO "--- 查询单个门店位置 ---"
+GEOPOS geo:stores "store:sanlitun"
+
+ECHO "--- 批量查询多个门店位置 ---"
+GEOPOS geo:stores "store:guomao" "store:wudaokou" "store:notexist"
+
+ECHO "--- 注意：Geo 底层用 Sorted Set，可看到 store ID 与 score（GeoHash） ---"
+ZRANGE geo:stores 0 -1 WITHSCORES
+
+
+ECHO "=== 3. GEODIST 计算两个门店距离 ==="
+
+ECHO "--- 三里屯到国贸的距离（默认单位 m） ---"
+GEODIST geo:stores "store:sanlitun" "store:guomao"
+
+ECHO "--- 三里屯到国贸的距离（km） ---"
+GEODIST geo:stores "store:sanlitun" "store:guomao" km
+
+ECHO "--- 三里屯到五道口的距离（km） ---"
+GEODIST geo:stores "store:sanlitun" "store:wudaokou" km
+
+ECHO "--- 五道口到中关村（很近） ---"
+GEODIST geo:stores "store:wudaokou" "store:zhongguancun" km
+
+ECHO "--- 三里屯到王府井（也很近） ---"
+GEODIST geo:stores "store:sanlitun" "store:wangfujing" km
+
+
+ECHO "=== 4. GEOSEARCH 以坐标为中心搜索附近门店 ==="
+
+ECHO "--- 以天安门附近（116.40, 39.92）为中心，搜索 5km 内门店，按距离升序 ---"
+GEOSEARCH geo:stores FROMLONLAT 116.40 39.92 BYRADIUS 5 km ASC WITHDIST WITHCOORD
+
+ECHO "--- 限制最多返回 3 个 ---"
+GEOSEARCH geo:stores FROMLONLAT 116.40 39.92 BYRADIUS 10 km ASC COUNT 3 WITHDIST WITHCOORD
+
+ECHO "--- 以五道口（116.34, 39.99）为中心，搜索 3km 内门店 ---"
+GEOSEARCH geo:stores FROMLONLAT 116.34 39.99 BYRADIUS 3 km ASC WITHDIST WITHCOORD
+
+ECHO "--- 按距离降序（远到近） ---"
+GEOSEARCH geo:stores FROMLONLAT 116.40 39.92 BYRADIUS 15 km DESC WITHDIST
+
+
+ECHO "=== 5. GEOSEARCH 以已有成员为中心搜索 ==="
+
+ECHO "--- 以 store:sanlitun 为中心，搜索 10km 内的其他门店 ---"
+GEOSEARCH geo:stores FROMMEMBER "store:sanlitun" BYRADIUS 10 km ASC WITHDIST WITHCOORD COUNT 5
+
+ECHO "--- 排除自身（COUNT 4 即可，因为自身距离为 0 排在最前） ---"
+GEOSEARCH geo:stores FROMMEMBER "store:sanlitun" BYRADIUS 10 km ASC WITHDIST COUNT 4
+
+
+ECHO "=== 6. GEOSEARCH BYBOX 矩形区域搜索 ==="
+
+ECHO "--- 以天安门附近为中心，搜索 10km × 10km 矩形内的门店 ---"
+GEOSEARCH geo:stores FROMLONLAT 116.40 39.92 BYBOX 10 10 km ASC WITHDIST WITHCOORD
+
+
+ECHO "=== 7. GEOSEARCH 不带 WITH 选项只返回 member 列表 ==="
+
+ECHO "--- 只返回门店 ID ---"
+GEOSEARCH geo:stores FROMLONLAT 116.40 39.92 BYRADIUS 15 km ASC
+
+
+ECHO "=== 8. GEOSEARCHSTORE 将搜索结果存入新 key（Redis 7.0+） ==="
+
+ECHO "--- 把搜索结果存入 geo:stores:nearby，方便后续分页或多次引用 ---"
+GEOSEARCHSTORE geo:stores:nearby geo:stores FROMLONLAT 116.40 39.92 BYRADIUS 10 km ASC WITHDIST
+
+ECHO "--- 查看存入的结果（Sorted Set，score 为距离） ---"
+ZRANGE geo:stores:nearby 0 -1 WITHSCORES
+
+
+ECHO "=== 9. WITHHASH 返回 GeoHash 原始整数 ==="
+
+ECHO "--- 返回 GeoHash 整数（52 位） ---"
+GEOSEARCH geo:stores FROMLONLAT 116.40 39.92 BYRADIUS 15 km ASC WITHHASH COUNT 3
+
+
+ECHO "=== 10. 实战：用户位置附近的门店推荐 ==="
+
+ECHO "--- 假设用户在国贸（116.4644, 39.9080），找最近 3 个门店 ---"
+GEOSEARCH geo:stores FROMLONLAT 116.4644 39.9080 BYRADIUS 20 km ASC COUNT 3 WITHDIST WITHCOORD
+
+ECHO "--- 假设用户在中关村，找 2km 内的门店 ---"
+GEOSEARCH geo:stores FROMLONLAT 116.3100 39.9910 BYRADIUS 2 km ASC WITHDIST WITHCOORD
+
+
+ECHO "=== 11. 底层编码与类型 ==="
+
+ECHO "--- Geo 底层就是 Sorted Set ---"
+TYPE geo:stores
+
+ECHO "--- 查看编码 ---"
+OBJECT ENCODING geo:stores
+
+
+ECHO "=== 12. 删除门店（用 ZREM，因为底层是 Sorted Set） ==="
+
+ECHO "--- 注意：Geo 没有专用删除命令，用 ZREM 删除 member ---"
+ZREM geo:stores "store:shangdi"
+
+ECHO "--- 剩余门店 ---"
+ZRANGE geo:stores 0 -1
+
+
+ECHO "=== 13. 清理演示数据 ==="
+
+DEL geo:stores geo:stores:nearby
+
+ECHO "=== Day06 Geo 演示完成 ==="

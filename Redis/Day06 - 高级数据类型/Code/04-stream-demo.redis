@@ -1,0 +1,223 @@
+# ============================================================
+# 文件用途：Stream 流演示（订单事件流 / 消费组 / 死信处理 / 裁剪）
+# 场景：电商平台订单事件流消息队列
+# 执行方式：redis-cli < 04-stream-demo.redis
+#           或进入 redis-cli 后逐行复制粘贴
+# 适用版本：Redis 7.0+
+# ============================================================
+
+# 清理本次演示涉及的 Key
+DEL stream:orders
+DEL stream:notifications
+
+
+ECHO "=== 1. XADD 添加订单事件（自动生成 ID） ==="
+
+ECHO "--- XADD key * field value：* 表示由 Redis 自动生成 ID（时间戳-序号） ---"
+XADD stream:orders * type "create" orderId "1001" userId "u:1" amount 99.9
+
+XADD stream:orders * type "create" orderId "1002" userId "u:2" amount 199.5
+
+XADD stream:orders * type "pay" orderId "1001" userId "u:1" payMethod "alipay"
+
+XADD stream:orders * type "ship" orderId "1002" userId "u:2" carrier "sf-express"
+
+XADD stream:orders * type "create" orderId "1003" userId "u:3" amount 49.0
+
+
+ECHO "=== 2. XLEN 查询消息总数 ==="
+
+XLEN stream:orders
+
+
+ECHO "=== 3. XRANGE 按时间范围查询（正序） ==="
+
+ECHO "--- 全部消息（- 表示最小，+ 表示最大） ---"
+XRANGE stream:orders - +
+
+ECHO "--- 只返回 2 条 ---"
+XRANGE stream:orders - + COUNT 2
+
+ECHO "--- 指定 ID 范围（用第一条消息 ID 作为起点） ---"
+XRANGE stream:orders 1738000000000-0 +
+
+
+ECHO "=== 4. XREVRANGE 倒序查询（最新在前） ==="
+
+ECHO "--- 最新 3 条消息 ---"
+XREVRANGE stream:orders + - COUNT 3
+
+
+ECHO "=== 5. XREAD 读取消息（非消费组方式） ==="
+
+ECHO "--- 从头读取 5 条 ---"
+XREAD COUNT 5 STREAMS stream:orders 0
+
+ECHO "--- 用 \$ 表示只读最新消息（后续新消息） ---"
+ECHO "--- 实际场景中配合 BLOCK 阻塞等待，这里演示非阻塞 ---"
+XREAD COUNT 5 STREAMS stream:orders $
+
+
+ECHO "=== 6. XADD 带选项：MAXLEN 裁剪与手动 ID ==="
+
+ECHO "--- MAXLEN ~ 100：近似裁剪到 100 条（性能好，允许多一点） ---"
+XADD stream:orders MAXLEN ~ 100 * type "create" orderId "1004" userId "u:4" amount 88.8
+
+ECHO "--- MAXLEN = 50：精确裁剪到 50 条 ---"
+XADD stream:orders MAXLEN = 50 * type "create" orderId "1005" userId "u:5" amount 66.6
+
+ECHO "--- MINID ~ <id>：删除小于指定 ID 的消息 ---"
+XADD stream:orders MINID ~ 1738000000000 * type "create" orderId "1006" userId "u:6" amount 33.3
+
+ECHO "--- NOMKSTREAM：key 不存在时不创建 ---"
+XADD stream:notexist NOMKSTREAM * type "test"
+
+
+ECHO "=== 7. 消费组：XGROUP CREATE 创建消费组 ==="
+
+ECHO "--- 创建消费组 order_processors，从头开始消费（id = 0） ---"
+XGROUP CREATE stream:orders order_processors 0
+
+ECHO "--- 创建消费组 order_auditors，只消费新消息（id = \$） ---"
+XGROUP CREATE stream:orders order_auditors $ MKSTREAM
+
+ECHO "--- 查看所有消费组 ---"
+XINFO GROUPS stream:orders
+
+
+ECHO "=== 8. XREADGROUP 消费组消费消息 ==="
+
+ECHO "--- consumer-1 从 order_processors 组消费 3 条新消息（> 表示未投递的新消息） ---"
+XREADGROUP GROUP order_processors consumer-1 COUNT 3 STREAMS stream:orders >
+
+ECHO "--- consumer-2 再消费 2 条 ---"
+XREADGROUP GROUP order_processors consumer-2 COUNT 2 STREAMS stream:orders >
+
+
+ECHO "=== 9. XINFO 查看消费者组详情 ==="
+
+ECHO "--- Stream 整体信息 ---"
+XINFO STREAM stream:orders
+
+ECHO "--- 消费组内所有消费者 ---"
+XINFO CONSUMERS stream:orders order_processors
+
+
+ECHO "=== 10. XACK 确认消息已处理 ==="
+
+ECHO "--- 先查看 consumer-1 处理了哪些消息（XINFO） ---"
+XINFO CONSUMERS stream:orders order_processors
+
+ECHO "--- 取出 consumer-1 拿到的第一条消息 ID，用 XACK 确认 ---"
+ECHO "--- 注意：实际操作需要替换为真实消息 ID，下面用通配方式说明 ---"
+
+ECHO "--- 演示：用 XRANGE 取一条消息 ID 后 ACK ---"
+ECHO "--- 实际执行时请将 <msgid> 替换为上面 XREADGROUP 返回的 ID ---"
+
+ECHO "--- 这里用 XPENDING 列出待确认消息，再逐个 ACK ---"
+XPENDING stream:orders order_processors
+
+
+ECHO "=== 11. XPENDING 查看待确认消息 ==="
+
+ECHO "--- 查看待确认消息总数与范围 ---"
+XPENDING stream:orders order_processors
+
+ECHO "--- 列出待确认消息详情（含消费者、idle 时间） ---"
+XPENDING stream:orders order_processors - + 10
+
+
+ECHO "=== 12. XCLAIM 转移超时消息（死信处理） ==="
+
+ECHO "--- 模拟 consumer-1 崩溃，把它未 ACK 的消息转移给 consumer-3 ---"
+ECHO "--- min-idle-time 设为 0 表示立即转移（实际生产中设为几十秒/几分钟） ---"
+
+ECHO "--- 先查看待确认消息（来自 consumer-1 的） ---"
+XPENDING stream:orders order_processors - + 10 consumer-1
+
+ECHO "--- 把 consumer-1 的待确认消息转移给 consumer-3（min-idle-time = 0 演示） ---"
+ECHO "--- 实际执行需要替换 <msgid> 为 XPENDING 列出的消息 ID ---"
+ECHO "--- 命令格式：XCLAIM stream:orders order_processors consumer-3 0 <msgid> ---"
+
+
+ECHO "=== 13. XAUTOCLAIM 自动批量转移（Redis 6.2+） ==="
+
+ECHO "--- 自动把 min-idle-time 超过 0 的消息转移给 consumer-3 ---"
+XAUTOCLAIM stream:orders order_processors consumer-3 0 - COUNT 10
+
+
+ECHO "=== 14. 重新读取待确认消息（XREADGROUP id = 0） ==="
+
+ECHO "--- consumer-3 重新读取自己待确认但未处理完的消息（id = 0） ---"
+XREADGROUP GROUP order_processors consumer-3 COUNT 10 STREAMS stream:orders 0
+
+
+ECHO "=== 15. XDEL 删除指定消息 ==="
+
+ECHO "--- 取最新消息 ID 后删除（演示） ---"
+ECHO "--- 实际执行需要替换 <msgid> ---"
+ECHO "--- XDEL stream:orders <msgid> ---"
+
+ECHO "--- XDEL 不会立即释放内存，但消息不再可见 ---"
+
+
+ECHO "=== 16. XTRIM 裁剪 Stream ==="
+
+ECHO "--- 裁剪到最多 5 条（精确） ---"
+XTRIM stream:orders MAXLEN = 5
+
+ECHO "--- 裁剪后消息数 ---"
+XLEN stream:orders
+
+ECHO "--- 近似裁剪到 3 条（性能更好） ---"
+XTRIM stream:orders MAXLEN ~ 3
+
+ECHO "--- 按 MINID 裁剪：删除 ID 小于某值的消息 ---"
+ECHO "--- XTRIM stream:orders MINID ~ 1738000000000-0 ---"
+
+
+ECHO "=== 17. 完整消费组流程演示（重新跑一遍清晰版） ==="
+
+DEL stream:notifications
+
+ECHO "--- 1) 创建 Stream 并添加初始消息 ---"
+XADD stream:notifications * event "login" userId "u:1"
+XADD stream:notifications * event "login" userId "u:2"
+XADD stream:notifications * event "purchase" userId "u:1" amount 99
+XADD stream:notifications * event "logout" userId "u:2"
+XADD stream:notifications * event "login" userId "u:3"
+
+ECHO "--- 2) 创建消费组 notifier_group，从头消费 ---"
+XGROUP CREATE stream:notifications notifier_group 0
+
+ECHO "--- 3) consumer-A 消费 3 条 ---"
+XREADGROUP GROUP notifier_group consumer-A COUNT 3 STREAMS stream:notifications >
+
+ECHO "--- 4) consumer-B 消费 2 条 ---"
+XREADGROUP GROUP notifier_group consumer-B COUNT 2 STREAMS stream:notifications >
+
+ECHO "--- 5) 查看待确认消息 ---"
+XPENDING stream:notifications notifier_group
+
+ECHO "--- 6) consumer-A 确认第一条消息（演示用 XPENDING 取 ID） ---"
+ECHO "--- 实际：XACK stream:notifications notifier_group <msgid> ---"
+
+ECHO "--- 7) 查看消费者状态 ---"
+XINFO CONSUMERS stream:notifications notifier_group
+
+ECHO "--- 8) 假设 consumer-B 宕机，把它的消息转移给 consumer-C ---"
+XAUTOCLAIM stream:notifications notifier_group consumer-C 0 - COUNT 5
+
+ECHO "--- 9) consumer-C 处理完后 ACK（演示） ---"
+ECHO "--- 实际：XACK stream:notifications notifier_group <msgid> ---"
+
+ECHO "--- 10) Stream 信息总览 ---"
+XINFO STREAM stream:notifications
+
+
+ECHO "=== 18. 清理演示数据 ==="
+
+DEL stream:orders stream:notifications stream:notexist
+
+ECHO "=== Day06 Stream 演示完成 ==="
+ECHO "=== 提示：完整消费组流程请参考 Day07/Code/02-stream-mq-demo.redis ==="

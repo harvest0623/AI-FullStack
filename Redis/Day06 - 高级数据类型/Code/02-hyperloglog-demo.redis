@@ -1,0 +1,133 @@
+# ============================================================
+# 文件用途：HyperLogLog 基数估算演示（UV / DAU / MAU 统计）
+# 场景：电商平台独立访客统计、日活月活合并
+# 执行方式：redis-cli < 02-hyperloglog-demo.redis
+#           或进入 redis-cli 后逐行复制粘贴
+# 适用版本：Redis 7.0+
+# ============================================================
+
+# 清理本次演示涉及的 Key
+DEL counter:uv:20250128 counter:uv:20250129 counter:uv:20250130
+DEL counter:uv:week2025_05 counter:uv:month202501
+DEL uv:set:20250128
+
+
+ECHO "=== 1. PFADD 添加访客，PFCOUNT 估算基数 ==="
+
+ECHO "--- 模拟 1 月 28 日 5 个独立访客访问网站 ---"
+PFADD counter:uv:20250128 "user:1" "user:2" "user:3" "user:4" "user:5"
+
+ECHO "--- 重复添加 user:1 和 user:3，不会增加计数 ---"
+PFADD counter:uv:20250128 "user:1" "user:3"
+
+ECHO "--- 1 月 28 日 UV（应为 5） ---"
+PFCOUNT counter:uv:20250128
+
+
+ECHO "=== 2. 大量数据下 PFCOUNT 仍稳定 ==="
+
+ECHO "--- 模拟 1 万个访客（用 user:0 到 user:9999） ---"
+PFADD counter:uv:20250128 "user:0" "user:100" "user:200" "user:300" "user:400" "user:500" "user:600" "user:700" "user:800" "user:900"
+PFADD counter:uv:20250128 "user:1000" "user:1100" "user:1200" "user:1300" "user:1400" "user:1500" "user:1600" "user:1700" "user:1800" "user:1900"
+PFADD counter:uv:20250128 "user:2000" "user:2100" "user:2200" "user:2300" "user:2400" "user:2500" "user:2600" "user:2700" "user:2800" "user:2900"
+PFADD counter:uv:20250128 "user:3000" "user:3100" "user:3200" "user:3300" "user:3400" "user:3500" "user:3600" "user:3700" "user:3800" "user:3900"
+PFADD counter:uv:20250128 "user:4000" "user:4100" "user:4200" "user:4300" "user:4400" "user:4500" "user:4600" "user:4700" "user:4800" "user:4900"
+
+ECHO "--- 当前估算 UV（约 50 多，误差 < 1%） ---"
+PFCOUNT counter:uv:20250128
+
+
+ECHO "=== 3. PFMERGE 合并日 UV 为周/月 UV ==="
+
+ECHO "--- 准备 1 月 29 日和 1 月 30 日的 UV ---"
+PFADD counter:uv:20250129 "user:1" "user:2" "user:6" "user:7" "user:8"
+PFADD counter:uv:20250130 "user:2" "user:3" "user:8" "user:9" "user:10"
+
+ECHO "--- 合并 3 天 UV 为周 UV（去重后应为 10 个：user:1-10） ---"
+PFMERGE counter:uv:week2025_05 counter:uv:20250128 counter:uv:20250129 counter:uv:20250130
+
+ECHO "--- 周 UV 总数（去重估算） ---"
+PFCOUNT counter:uv:week2025_05
+
+
+ECHO "=== 4. PFCOUNT 多 key 合并估算（不落盘） ==="
+
+ECHO "--- 直接对多个 key 调用 PFCOUNT，返回合并后的基数（不创建新 key） ---"
+PFCOUNT counter:uv:20250128 counter:uv:20250129 counter:uv:20250130
+
+
+ECHO "=== 5. HyperLogLog vs Set 去重对比 ==="
+
+ECHO "--- 用 Set 存同样的用户 ID ---"
+DEL uv:set:20250128
+SADD uv:set:20250128 "user:1" "user:2" "user:3" "user:4" "user:5"
+SADD uv:set:20250128 "user:1" "user:3"
+SADD uv:set:20250128 "user:0" "user:100" "user:200" "user:300" "user:400" "user:500" "user:600" "user:700" "user:800" "user:900"
+SADD uv:set:20250128 "user:1000" "user:1100" "user:1200" "user:1300" "user:1400" "user:1500" "user:1600" "user:1700" "user:1800" "user:1900"
+SADD uv:set:20250128 "user:2000" "user:2100" "user:2200" "user:2300" "user:2400" "user:2500" "user:2600" "user:2700" "user:2800" "user:2900"
+SADD uv:set:20250128 "user:3000" "user:3100" "user:3200" "user:3300" "user:3400" "user:3500" "user:3600" "user:3700" "user:3800" "user:3900"
+SADD uv:set:20250128 "user:4000" "user:4100" "user:4200" "user:4300" "user:4400" "user:4500" "user:4600" "user:4700" "user:4800" "user:4900"
+
+ECHO "--- Set 精确去重数量（应为 51） ---"
+SCARD uv:set:20250128
+
+ECHO "--- HyperLogLog 估算数量（约 51，误差 < 1%） ---"
+PFCOUNT counter:uv:20250128
+
+
+ECHO "=== 6. 内存占用对比：HLL 固定 ~12KB，Set 与元素数成正比 ==="
+
+ECHO "--- HyperLogLog 内存占用 ---"
+MEMORY USAGE counter:uv:20250128
+
+ECHO "--- Set 内存占用 ---"
+MEMORY USAGE uv:set:20250128
+
+
+ECHO "=== 7. 模拟百万级 UV：HLL 内存依然稳定 ==="
+
+ECHO "--- 批量 PFADD 模拟大量用户（这里用 200 个简化演示） ---"
+PFADD counter:uv:20250128 "user:10000" "user:20000" "user:30000" "user:40000" "user:50000"
+PFADD counter:uv:20250128 "user:60000" "user:70000" "user:80000" "user:90000" "user:100000"
+PFADD counter:uv:20250128 "user:110000" "user:120000" "user:130000" "user:140000" "user:150000"
+
+ECHO "--- HLL 内存占用（与之前几乎一致，固定 ~12KB） ---"
+MEMORY USAGE counter:uv:20250128
+
+
+ECHO "=== 8. OBJECT ENCODING 查看底层编码 ==="
+
+ECHO "--- HyperLogLog 底层是 dense/sparse 编码的 String ---"
+OBJECT ENCODING counter:uv:20250128
+
+
+ECHO "=== 9. 实际应用：DAU / MAU 统计 ==="
+
+ECHO "--- 模拟一周 7 天的日活 HLL ---"
+PFADD dau:2025-01-20 "u:1" "u:2" "u:3"
+PFADD dau:2025-01-21 "u:1" "u:2" "u:4"
+PFADD dau:2025-01-22 "u:1" "u:3" "u:5"
+PFADD dau:2025-01-23 "u:2" "u:3" "u:6"
+PFADD dau:2025-01-24 "u:1" "u:2" "u:7"
+PFADD dau:2025-01-25 "u:1" "u:4" "u:8"
+PFADD dau:2025-01-26 "u:2" "u:5" "u:9"
+
+ECHO "--- 合并为周活 WAU ---"
+PFMERGE wau:2025w05 dau:2025-01-20 dau:2025-01-21 dau:2025-01-22 dau:2025-01-23 dau:2025-01-24 dau:2025-01-25 dau:2025-01-26
+
+ECHO "--- 周活总数（应为 9 个独立用户） ---"
+PFCOUNT wau:2025w05
+
+ECHO "--- 单日 DAU 查询 ---"
+PFCOUNT dau:2025-01-20
+
+
+ECHO "=== 10. 清理演示数据 ==="
+
+DEL counter:uv:20250128 counter:uv:20250129 counter:uv:20250130
+DEL counter:uv:week2025_05 counter:uv:month202501
+DEL uv:set:20250128
+DEL dau:2025-01-20 dau:2025-01-21 dau:2025-01-22 dau:2025-01-23 dau:2025-01-24 dau:2025-01-25 dau:2025-01-26
+DEL wau:2025w05
+
+ECHO "=== Day06 HyperLogLog 演示完成 ==="
