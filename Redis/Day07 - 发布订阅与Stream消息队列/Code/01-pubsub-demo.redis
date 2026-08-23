@@ -1,0 +1,162 @@
+# ============================================================
+# 文件用途：Pub/Sub 发布订阅演示
+# 场景：电商平台实时通知频道
+# 执行方式：redis-cli < 01-pubsub-demo.redis
+#           或进入 redis-cli 后逐行复制粘贴
+# 适用版本：Redis 7.0+
+#
+# 重要说明：
+#   SUBSCRIBE / PSUBSCRIBE 是阻塞命令，进入订阅状态后无法执行其他命令。
+#   因此本文件无法在单个管道中演示完整的"先订阅再发布"流程。
+#   本文件主要演示：
+#     1. PUBLISH 发布消息（无订阅者时消息直接丢失）
+#     2. PUBSUB 查询频道与订阅者数
+#     3. 说明如何在多终端中完成完整演示
+#   完整多终端操作步骤请参考本目录下的 README.md
+# ============================================================
+
+
+ECHO "=== 1. PUBLISH 在无订阅者时发布消息（消息直接丢失） ==="
+
+ECHO "--- 向 pubsub:notifications 频道发布消息 ---"
+ECHO "--- 因为没有订阅者，返回 0（收到消息的订阅者数） ---"
+PUBLISH pubsub:notifications "order:1001 has been shipped"
+
+ECHO "--- 再发布一条，依然返回 0 ---"
+PUBLISH pubsub:notifications "user:1 just logged in"
+
+ECHO "--- 结论：Pub/Sub 不存储消息，无订阅者时消息直接丢失 ---"
+
+
+ECHO "=== 2. PUBSUB CHANNELS 查询活跃频道 ==="
+
+ECHO "--- 查询当前所有有订阅者的频道（pattern 可选） ---"
+PUBSUB CHANNELS
+
+ECHO "--- 按模式查询：以 pubsub: 开头的频道 ---"
+PUBSUB CHANNELS pubsub:*
+
+
+ECHO "=== 3. PUBSUB NUMSUB 查询频道订阅者数 ==="
+
+ECHO "--- 查询 pubsub:notifications 的订阅者数（应为 0，因为没人订阅） ---"
+PUBSUB NUMSUB pubsub:notifications
+
+ECHO "--- 查询多个频道的订阅者数 ---"
+PUBSUB NUMSUB pubsub:notifications pubsub:orders pubsub:chat
+
+
+ECHO "=== 4. PUBSUB NUMPAT 查询模式订阅总数 ==="
+
+PUBSUB NUMPAT
+
+
+ECHO "=== 5. 多终端演示说明（无法在本文件中执行，请手动操作） ==="
+
+ECHO "============================================================"
+ECHO "完整 Pub/Sub 演示需要开两个或多个 redis-cli 终端："
+ECHO ""
+ECHO "【终端 A - 订阅者】"
+ECHO "  redis-cli"
+ECHO "  SUBSCRIBE pubsub:notifications"
+ECHO "  # 进入订阅阻塞状态，等待消息"
+ECHO ""
+ECHO "【终端 B - 发布者】"
+ECHO "  redis-cli"
+ECHO "  PUBLISH pubsub:notifications \"order:1001 has been shipped\""
+ECHO "  # 终端 A 会立即收到消息"
+ECHO ""
+ECHO "【终端 C - 模式订阅者】"
+ECHO "  redis-cli"
+ECHO "  PSUBSCRIBE order.*"
+ECHO "  # 订阅 order.create / order.pay / order.ship 等"
+ECHO ""
+ECHO "【验证离线丢消息】"
+ECHO "  1. 终端 A 先 UNSUBSCRIBE 或关闭"
+ECHO "  2. 终端 B 再 PUBLISH 一条消息"
+ECHO "  3. 终端 A 重新 SUBSCRIBE，收不到刚才那条消息"
+ECHO ""
+ECHO "【验证 PUBSUB 命令】"
+ECHO "  在终端 B（非订阅状态）执行："
+ECHO "  PUBSUB CHANNELS               # 列出有订阅者的频道"
+ECHO "  PUBSUB NUMSUB pubsub:notifications   # 查订阅者数"
+ECHO "  PUBSUB NUMPAT                 # 模式订阅总数"
+ECHO "============================================================"
+
+
+ECHO "=== 6. 演示：模拟电商实时通知场景的 PUBLISH 命令 ==="
+
+ECHO "--- 假设已有订阅者，发布各类通知 ---"
+ECHO "--- 实际执行时请确保终端 A 已 SUBSCRIBE pubsub:notifications ---"
+
+PUBLISH pubsub:notifications "{\"event\":\"order.create\",\"orderId\":\"1001\",\"userId\":\"u:1\",\"amount\":99.9}"
+
+PUBLISH pubsub:notifications "{\"event\":\"order.pay\",\"orderId\":\"1001\",\"payMethod\":\"alipay\"}"
+
+PUBLISH pubsub:notifications "{\"event\":\"order.ship\",\"orderId\":\"1001\",\"carrier\":\"sf-express\"}"
+
+PUBLISH pubsub:notifications "{\"event\":\"user.login\",\"userId\":\"u:1\"}"
+
+PUBLISH pubsub:notifications "{\"event\":\"coupon.grant\",\"userId\":\"u:1\",\"couponId\":\"c:100\"}"
+
+
+ECHO "=== 7. 多频道订阅演示说明 ==="
+
+ECHO "--- 订阅者可以同时订阅多个频道 ---"
+ECHO "--- 终端 A 执行：SUBSCRIBE pubsub:notifications pubsub:orders pubsub:chat ---"
+ECHO "--- 三个频道任一有消息都会收到 ---"
+
+PUBLISH pubsub:orders "order:1002 created"
+
+PUBLISH pubsub:chat "user:1 sent a message"
+
+
+ECHO "=== 8. 模式订阅演示说明 ==="
+
+ECHO "--- 终端 C 执行：PSUBSCRIBE order.* ---"
+ECHO "--- 匹配 order.create / order.pay / order.ship / order.cancel 等 ---"
+
+PUBLISH order.create "order:1003 created"
+PUBLISH order.pay "order:1003 paid"
+PUBLISH order.ship "order:1003 shipped"
+PUBLISH order.cancel "order:1004 cancelled"
+
+ECHO "--- 注意：模式订阅收到的消息会包含 pattern 字段，便于区分 ---"
+
+
+ECHO "=== 9. Pub/Sub 局限性验证说明 ==="
+
+ECHO "============================================================"
+ECHO "Pub/Sub 的局限（无法在单文件中验证，需多终端）："
+ECHO ""
+ECHO "1. 无持久化：消息发出即丢，Redis 不存储"
+ECHO "   验证：终端 A 关闭后，B 发布消息，A 重连收不到"
+ECHO ""
+ECHO "2. 无消费确认：没有 ACK 机制"
+ECHO "   后果：消费者处理失败无法重试"
+ECHO ""
+ECHO "3. 无消费组：所有订阅者都收到全部消息"
+ECHO "   验证：开两个订阅者 A1、A2，B 发布一条，A1 和 A2 都收到"
+ECHO ""
+ECHO "4. 消息堆积不可控：慢消费者会被 Redis 主动断开"
+Echo "   配置：client-output-buffer-limit pubsub 32mb 8mb 60"
+ECHO ""
+ECHO "5. 频道查询受限：只能查当前有订阅者的频道"
+ECHO "   PUBSUB CHANNELS 只返回活跃频道，历史频道无法查询"
+ECHO "============================================================"
+
+
+ECHO "=== 10. Pub/Sub 适用场景与替代方案 ==="
+
+ECHO "--- 适用：实时通知、聊天室、日志广播、配置变更通知 ---"
+ECHO "--- 不适用：订单处理、任务队列、需要可靠投递的场景 ---"
+ECHO "--- 替代方案：用 Stream（见 02-stream-mq-demo.redis） ---"
+
+
+ECHO "=== 11. 清理演示数据 ==="
+
+ECHO "--- Pub/Sub 不产生持久化数据，无需清理 ---"
+ECHO "--- 通知频道 pubsub:notifications 不需要 DEL ---"
+
+ECHO "=== Day07 Pub/Sub 演示完成 ==="
+ECHO "=== 完整多终端操作步骤请参考本目录 README.md ==="
