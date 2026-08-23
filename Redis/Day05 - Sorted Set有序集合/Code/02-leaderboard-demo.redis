@@ -1,0 +1,161 @@
+# ============================================================
+# 文件用途：排行榜完整实战（电商商品销量排行）
+# 场景：日销量排行 → 月度排行合并 → 用户排名查询
+# 执行方式：redis-cli < 02-leaderboard-demo.redis
+#           或进入 redis-cli 后逐行复制粘贴
+# 适用版本：Redis 7.0+
+# ============================================================
+
+# 清理本次演示涉及的 Key
+DEL leaderboard:sales:daily
+DEL leaderboard:sales:daily:20250101 leaderboard:sales:daily:20250102 leaderboard:sales:daily:20250103
+DEL leaderboard:sales:monthly
+DEL leaderboard:views:daily
+
+
+ECHO "=== 1. 模拟一天的商品销售：用 ZINCRBY 增量更新日销量榜 ==="
+
+ECHO "--- 初始状态：几个商品已有销量（直接 ZADD 写入） ---"
+ZADD leaderboard:sales:daily 100 "product:001" 80 "product:002" 50 "product:003" 30 "product:004"
+
+ECHO "--- 上午下单：product:002 售出 25 件，product:005 新增 60 件 ---"
+ZINCRBY leaderboard:sales:daily 25 "product:002"
+ZINCRBY leaderboard:sales:daily 60 "product:005"
+
+ECHO "--- 下午下单：product:001 售出 40 件，product:003 售出 90 件 ---"
+ZINCRBY leaderboard:sales:daily 40 "product:001"
+ZINCRBY leaderboard:sales:daily 90 "product:003"
+
+ECHO "--- 晚上 product:005 又售出 30 件 ---"
+ZINCRBY leaderboard:sales:daily 30 "product:005"
+
+ECHO "--- 当前全部商品销量（降序，由高到低） ---"
+ZREVRANGE leaderboard:sales:daily 0 -1 WITHSCORES
+
+
+ECHO "=== 2. Top 10 查询 ==="
+
+ECHO "--- 销量 Top 10（多数电商首页展示） ---"
+ZREVRANGE leaderboard:sales:daily 0 9 WITHSCORES
+
+ECHO "--- 只想看 Top 3 的商品 ID（不带 score） ---"
+ZREVRANGE leaderboard:sales:daily 0 2
+
+
+ECHO "=== 3. 排行榜翻页：每页 3 条，查看第 2 页（offset=3, count=3） ==="
+
+ECHO "--- 第 1 页：排名 0-2 ---"
+ZREVRANGE leaderboard:sales:daily 0 2 WITHSCORES
+
+ECHO "--- 第 2 页：排名 3-5 ---"
+ZREVRANGE leaderboard:sales:daily 3 5 WITHSCORES
+
+ECHO "--- 第 3 页：排名 6-8（如果存在） ---"
+ZREVRANGE leaderboard:sales:daily 6 8 WITHSCORES
+
+
+ECHO "=== 4. 查询某个商品的销量与排名 ==="
+
+ECHO "--- product:001 的当前销量 ---"
+ZSCORE leaderboard:sales:daily "product:001"
+
+ECHO "--- product:001 的销量排名（从高到低，0 = 第一名） ---"
+ZREVRANK leaderboard:sales:daily "product:001"
+
+ECHO "--- product:005 的销量与排名 ---"
+ZSCORE leaderboard:sales:daily "product:005"
+ZREVRANK leaderboard:sales:daily "product:005"
+
+ECHO "--- 批量查询多个商品销量 ---"
+ZMSCORE leaderboard:sales:daily "product:001" "product:002" "product:003"
+
+
+ECHO "=== 5. 按销量区间查询商品 ==="
+
+ECHO "--- 销量在 [50, 120] 之间的商品 ---"
+ZRANGEBYSCORE leaderboard:sales:daily 50 120 WITHSCORES
+
+ECHO "--- 销量大于 100 的商品数量 ---"
+ZCOUNT leaderboard:sales:daily (100 +inf
+
+ECHO "--- 销量大于 100 的商品列表 ---"
+ZRANGEBYSCORE leaderboard:sales:daily (100 +inf WITHSCORES
+
+
+ECHO "=== 6. 月度排行合并：用 ZUNIONSTORE 把多日榜单合并 ==="
+
+ECHO "--- 模拟 3 天的日销量榜 ---"
+ZADD leaderboard:sales:daily:20250101 100 "product:001" 80 "product:002" 50 "product:003"
+ZADD leaderboard:sales:daily:20250102 60 "product:001" 120 "product:002" 30 "product:004"
+ZADD leaderboard:sales:daily:20250103 90 "product:001" 70 "product:002" 40 "product:003" 20 "product:004"
+
+ECHO "--- 合并为月度榜：AGGREGATE SUM 把每个商品 3 天的销量累加 ---"
+ZUNIONSTORE leaderboard:sales:monthly 3 leaderboard:sales:daily:20250101 leaderboard:sales:daily:20250102 leaderboard:sales:daily:20250103
+
+ECHO "--- 月度销量 Top 5 ---"
+ZREVRANGE leaderboard:sales:monthly 0 4 WITHSCORES
+
+ECHO "--- 月度榜中 product:001 的总销量（应为 100 + 60 + 90 = 250） ---"
+ZSCORE leaderboard:sales:monthly "product:001"
+
+
+ECHO "=== 7. 加权合并：不同日期的销量权重不同（最近日期权重更高） ==="
+
+DEL leaderboard:sales:weighted
+
+ECHO "--- 给 20250103 权重 3，20250102 权重 2，20250101 权重 1 ---"
+ZUNIONSTORE leaderboard:sales:weighted 3 leaderboard:sales:daily:20250101 leaderboard:sales:daily:20250102 leaderboard:sales:daily:20250103 WEIGHTS 1 2 3 AGGREGATE SUM
+
+ECHO "--- 加权后月度榜 Top 5 ---"
+ZREVRANGE leaderboard:sales:weighted 0 4 WITHSCORES
+
+
+ECHO "=== 8. 排行榜裁剪：只保留 Top 50 ==="
+
+DEL leaderboard:sales:big
+
+ECHO "--- 构造 60 个商品的销量榜 ---"
+ZADD leaderboard:sales:big 60 "g01" 59 "g02" 58 "g03" 57 "g04" 56 "g05" 55 "g06" 54 "g07" 53 "g08" 52 "g09" 51 "g10"
+ZADD leaderboard:sales:big 50 "g11" 49 "g12" 48 "g13" 47 "g14" 46 "g15" 45 "g16" 44 "g17" 43 "g18" 42 "g19" 41 "g20"
+ZADD leaderboard:sales:big 40 "g21" 39 "g22" 38 "g23" 37 "g24" 36 "g25" 35 "g26" 34 "g27" 33 "g28" 32 "g29" 31 "g30"
+ZADD leaderboard:sales:big 30 "g31" 29 "g32" 28 "g33" 27 "g34" 26 "g35" 25 "g36" 24 "g37" 23 "g38" 22 "g39" 21 "g40"
+ZADD leaderboard:sales:big 20 "g41" 19 "g42" 18 "g43" 17 "g44" 16 "g45" 15 "g46" 14 "g47" 13 "g48" 12 "g49" 11 "g50"
+ZADD leaderboard:sales:big 10 "g51" 9 "g52" 8 "g53" 7 "g54" 6 "g55" 5 "g56" 4 "g57" 3 "g58" 2 "g59" 1 "g60"
+
+ECHO "--- 裁剪前总数 ---"
+ZCARD leaderboard:sales:big
+
+ECHO "--- 只保留 Top 50：删除排名 0 到 9 的（升序最小的 10 个，即销量 1-10 的 g51-g60） ---"
+ZREMRANGEBYRANK leaderboard:sales:big 0 9
+
+ECHO "--- 裁剪后总数 ---"
+ZCARD leaderboard:sales:big
+
+ECHO "--- 裁剪后 Top 5 ---"
+ZREVRANGE leaderboard:sales:big 0 4 WITHSCORES
+
+
+ECHO "=== 9. 浏览量排行榜（独立于销量榜） ==="
+
+ECHO "--- 商品浏览量也用 Sorted Set 维护 ---"
+ZINCRBY leaderboard:views:daily 1 "product:001"
+ZINCRBY leaderboard:views:daily 1 "product:001"
+ZINCRBY leaderboard:views:daily 1 "product:002"
+ZINCRBY leaderboard:views:daily 5 "product:003"
+
+ECHO "--- 浏览量 Top 3 ---"
+ZREVRANGE leaderboard:views:daily 0 2 WITHSCORES
+
+
+ECHO "=== 10. 同时出现在销量榜和浏览榜的商品数（ZINTERCARD） ==="
+
+ECHO "--- 交集计数，不落盘 ---"
+ZINTERCARD 2 leaderboard:sales:daily leaderboard:views:daily
+
+
+ECHO "=== 11. 清理演示数据 ==="
+
+DEL leaderboard:sales:daily leaderboard:sales:daily:20250101 leaderboard:sales:daily:20250102 leaderboard:sales:daily:20250103
+DEL leaderboard:sales:monthly leaderboard:sales:weighted leaderboard:sales:big leaderboard:views:daily
+
+ECHO "=== Day05 排行榜实战演示完成 ==="

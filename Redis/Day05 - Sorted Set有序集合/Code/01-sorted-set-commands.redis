@@ -1,0 +1,265 @@
+# ============================================================
+# 文件用途：Sorted Set 有序集合全部命令演示
+# 场景：电商平台商品销量、积分排行等
+# 执行方式：redis-cli < 01-sorted-set-commands.redis
+#           或进入 redis-cli 后逐行复制粘贴
+# 适用版本：Redis 7.0+
+# ============================================================
+
+# 清理本次演示涉及的 Key，保证可重复执行
+DEL zset:demo leaderboard:sales:daily zset:a zset:b zset:union zset:inter
+
+
+ECHO "=== 1. ZADD 基础用法与选项 NX / XX / GT / LT / CH / INCR ==="
+
+# 基础添加：返回新增成员数
+ZADD zset:demo 100 "product:001" 200 "product:002" 50 "product:003"
+
+ECHO "--- 查看当前排序（升序，由小到大） ---"
+ZRANGE zset:demo 0 -1 WITHSCORES
+
+ECHO "--- NX 选项：只新增不更新，已存在的 product:001 不会被改为 999 ---"
+ZADD zset:demo NX 999 "product:001" 80 "product:004"
+ZRANGE zset:demo 0 -1 WITHSCORES
+
+ECHO "--- XX 选项：只更新已存在成员，不新增 product:005 ---"
+ZADD zset:demo XX 60 "product:005"
+ZRANGE zset:demo 0 -1 WITHSCORES
+
+ECHO "--- GT 选项：仅当新 score 大于当前值才更新。product:001 当前 100，写入 150 会更新 ---"
+ZADD zset:demo GT 150 "product:001"
+ZSCORE zset:demo "product:001"
+
+ECHO "--- GT 选项：写入 80（小于 150），不会更新 ---"
+ZADD zset:demo GT 80 "product:001"
+ZSCORE zset:demo "product:001"
+
+ECHO "--- LT 选项：仅当新 score 小于当前值才更新。product:002 当前 200，写入 180 会更新 ---"
+ZADD zset:demo LT 180 "product:002"
+ZSCORE zset:demo "product:002"
+
+ECHO "--- CH 选项：返回被改变的成员数（新增 + 更新），而不是仅新增数 ---"
+ZADD zset:demo CH 250 "product:001" 999 "product:006" 30 "product:007"
+
+ECHO "--- INCR 选项：将 score 视为增量，原子累加，返回新值（此时只能单个成员） ---"
+ZADD zset:demo INCR 5 "product:001"
+
+
+ECHO "=== 2. ZINCRBY 单独的增量命令 ==="
+
+ZINCRBY zset:demo 10 "product:001"
+ZINCRBY zset:demo -20 "product:002"
+ZSCORE zset:demo "product:001"
+ZSCORE zset:demo "product:002"
+
+
+ECHO "=== 3. ZSCORE / ZMSCORE 查询分值 ==="
+
+ZSCORE zset:demo "product:003"
+
+ECHO "--- ZMSCORE 批量查询，不存在的成员返回 nil ---"
+ZMSCORE zset:demo "product:001" "product:002" "product:notexist"
+
+
+ECHO "=== 4. ZREM 删除成员 ==="
+
+ZADD zset:demo 88 "product:temp1" 99 "product:temp2"
+ZRANGE zset:demo 0 -1 WITHSCORES
+
+ECHO "--- 删除单个成员 ---"
+ZREM zset:demo "product:temp1"
+
+ECHO "--- 删除多个成员 ---"
+ZREM zset:demo "product:temp2" "product:006"
+
+
+ECHO "=== 5. ZCARD / ZCOUNT 计数 ==="
+
+ZCARD zset:demo
+
+ECHO "--- ZCOUNT 统计 score 在 [100, 200] 内的成员数（闭区间） ---"
+ZCOUNT zset:demo 100 200
+
+ECHO "--- 用 ( 表示开区间：100 < score ≤ 200 ---"
+ZCOUNT zset:demo (100 200
+
+ECHO "--- +inf / -inf 表示正负无穷 ---"
+ZCOUNT zset:demo -inf +inf
+
+
+ECHO "=== 6. ZRANGE / ZREVRANGE 按索引范围 ==="
+
+ECHO "--- 升序，前 3 名（最小三个） ---"
+ZRANGE zset:demo 0 2 WITHSCORES
+
+ECHO "--- 降序，Top 3（最大三个），排行榜常用 ---"
+ZREVRANGE zset:demo 0 2 WITHSCORES
+
+ECHO "--- 用负数索引：取最后 2 名 ---"
+ZRANGE zset:demo -2 -1 WITHSCORES
+
+
+ECHO "=== 7. ZRANGEBYSCORE / ZREVRANGEBYSCORE 按 score 范围 ==="
+
+ECHO "--- score 在 [100, 250] 之间的全部成员 ---"
+ZRANGEBYSCORE zset:demo 100 250 WITHSCORES
+
+ECHO "--- 带 LIMIT 分页：offset=0 count=2 ---"
+ZRANGEBYSCORE zset:demo -inf +inf WITHSCORES LIMIT 0 2
+
+ECHO "--- score > 150 的全部 ---"
+ZRANGEBYSCORE zset:demo (150 +inf WITHSCORES
+
+ECHO "--- ZREVRANGEBYSCORE：参数是 max min（先大后小） ---"
+ZREVRANGEBYSCORE zset:demo +inf 100 WITHSCORES LIMIT 0 3
+
+
+ECHO "=== 8. ZRANGE BYLEX 按字典序范围（score 相同时才有意义） ==="
+
+DEL zset:lex
+ZADD zset:lex 0 "apple" 0 "banana" 0 "cherry" 0 "grape" 0 "orange" 0 "pear"
+
+ECHO "--- 取字典序在 [a, f] 之间的成员 ---"
+ZRANGE zset:lex "[a" "[f" BYLEX
+
+ECHO "--- 开区间 (a, g) ---"
+ZRANGE zset:lex "(a" "(g" BYLEX
+
+ECHO "--- - 到 + 表示全部 ---"
+ZRANGE zset:lex - + BYLEX
+
+
+ECHO "=== 9. ZRANK / ZREVRANK 排名查询 ==="
+
+ECHO "--- ZRANK 升序排名（0 开始，最小为 0） ---"
+ZRANK zset:demo "product:001"
+
+ECHO "--- ZREVRANK 降序排名（0 开始，最大为 0，即"第几名"） ---"
+ZREVRANK zset:demo "product:001"
+
+
+ECHO "=== 10. ZREMRANGEBYRANK / ZREMRANGEBYSCORE 按范围删除 ==="
+
+DEL zset:trim
+ZADD zset:trim 10 "a" 20 "b" 30 "c" 40 "d" 50 "e" 60 "f"
+
+ECHO "--- 只保留 Top 3：删除排名 0 到 2（最小三个），即索引 0 到 -4 ---"
+ZREMRANGEBYRANK zset:trim 0 -4
+ZRANGE zset:trim 0 -1 WITHSCORES
+
+ECHO "--- 删除 score < 50 的成员 ---"
+ZREMRANGEBYSCORE zset:trim -inf (50
+ZRANGE zset:trim 0 -1 WITHSCORES
+
+
+ECHO "=== 11. ZPOPMIN / ZPOPMAX 弹出最值 ==="
+
+DEL zset:pop
+ZADD zset:pop 1 "one" 2 "two" 3 "three" 4 "four" 5 "five"
+
+ECHO "--- ZPOPMIN 弹出 score 最小成员，返回 key + score ---"
+ZPOPMIN zset:pop
+
+ECHO "--- ZPOPMIN 带 count，一次弹出多个 ---"
+ZPOPMIN zset:pop 2
+
+ECHO "--- ZPOPMAX 弹出 score 最大成员 ---"
+ZPOPMAX zset:pop
+
+ECHO "--- 剩余成员 ---"
+ZRANGE zset:pop 0 -1 WITHSCORES
+
+
+ECHO "=== 12. ZUNIONSTORE / ZINTERSTORE / ZINTERCARD 集合运算 ==="
+
+DEL zset:a zset:b
+
+ECHO "--- 准备两个 Sorted Set ---"
+ZADD zset:a 10 "p1" 20 "p2" 30 "p3"
+ZADD zset:b 5 "p1" 25 "p2" 40 "p4"
+
+ECHO "--- ZUNIONSTORE 并集，默认 AGGREGATE SUM，p1 的 score = 10 + 5 = 15 ---"
+ZUNIONSTORE zset:union 2 zset:a zset:b
+ZRANGE zset:union 0 -1 WITHSCORES
+
+ECHO "--- ZUNIONSTORE 使用 AGGREGATE MAX，取最大值 ---"
+ZUNIONSTORE zset:union 2 zset:a zset:b AGGREGATE MAX
+ZRANGE zset:union 0 -1 WITHSCORES
+
+ECHO "--- ZUNIONSTORE 使用 WEIGHTS，给 zset:b 的 score 乘 2 后再 SUM ---"
+ZUNIONSTORE zset:union 2 zset:a zset:b WEIGHTS 1 2 AGGREGATE SUM
+ZRANGE zset:union 0 -1 WITHSCORES
+
+ECHO "--- ZINTERSTORE 交集（仅 p1、p2 同时在两个集合），AGGREGATE SUM ---"
+ZINTERSTORE zset:inter 2 zset:a zset:b
+ZRANGE zset:inter 0 -1 WITHSCORES
+
+ECHO "--- ZINTERCARD 只返回交集元素个数，不落盘（Redis 7.0+） ---"
+ZINTERCARD 2 zset:a zset:b
+
+
+ECHO "=== 13. ZRANDMEMBER 随机返回成员 ==="
+
+ECHO "--- 随机返回 1 个成员 ---"
+ZRANDMEMBER zset:demo
+
+ECHO "--- 随机返回 3 个成员（正数：去重） ---"
+ZRANDMEMBER zset:demo 3
+
+ECHO "--- 随机返回 5 个成员（负数：可重复，模拟抽奖放回） ---"
+ZRANDMEMBER zset:demo -5
+
+ECHO "--- 带 WITHSCORES ---"
+ZRANDMEMBER zset:demo 2 WITHSCORES
+
+
+ECHO "=== 14. OBJECT ENCODING 查看底层编码 ==="
+
+DEL zset:small zset:large
+
+ECHO "--- 小集合：成员少且短，应为 listpack ---"
+ZADD zset:small 1 "a" 2 "b" 3 "c"
+OBJECT ENCODING zset:small
+
+ECHO "--- 构造大集合触发 skiplist 编码（超过 128 个成员） ---"
+# 这里用 200 个成员演示编码切换，实际执行可能略慢
+ZADD zset:large 1 "m1" 2 "m2" 3 "m3" 4 "m4" 5 "m5" 6 "m6" 7 "m7" 8 "m8" 9 "m9" 10 "m10"
+ZADD zset:large 11 "m11" 12 "m12" 13 "m13" 14 "m14" 15 "m15" 16 "m16" 17 "m17" 18 "m18" 19 "m19" 20 "m20"
+ZADD zset:large 21 "m21" 22 "m22" 23 "m23" 24 "m24" 25 "m25" 26 "m26" 27 "m27" 28 "m28" 29 "m29" 30 "m30"
+ZADD zset:large 31 "m31" 32 "m32" 33 "m33" 34 "m34" 35 "m35" 36 "m36" 37 "m37" 38 "m38" 39 "m39" 40 "m40"
+ZADD zset:large 41 "m41" 42 "m42" 43 "m43" 44 "m44" 45 "m45" 46 "m46" 47 "m47" 48 "m48" 49 "m49" 50 "m50"
+ZADD zset:large 51 "m51" 52 "m52" 53 "m53" 54 "m54" 55 "m55" 56 "m56" 57 "m57" 58 "m58" 59 "m59" 60 "m60"
+ZADD zset:large 61 "m61" 62 "m62" 63 "m63" 64 "m64" 65 "m65" 66 "m66" 67 "m67" 68 "m68" 69 "m69" 70 "m70"
+ZADD zset:large 71 "m71" 72 "m72" 73 "m73" 74 "m74" 75 "m75" 76 "m76" 77 "m77" 78 "m78" 79 "m79" 80 "m80"
+ZADD zset:large 81 "m81" 82 "m82" 83 "m83" 84 "m84" 85 "m85" 86 "m86" 87 "m87" 88 "m88" 89 "m89" 90 "m90"
+ZADD zset:large 91 "m91" 92 "m92" 93 "m93" 94 "m94" 95 "m95" 96 "m96" 97 "m97" 98 "m98" 99 "m99" 100 "m100"
+ZADD zset:large 101 "m101" 102 "m102" 103 "m103" 104 "m104" 105 "m105" 106 "m106" 107 "m107" 108 "m108" 109 "m109" 110 "m110"
+ZADD zset:large 111 "m111" 112 "m112" 113 "m113" 114 "m114" 115 "m115" 116 "m116" 117 "m117" 118 "m118" 119 "m119" 120 "m120"
+ZADD zset:large 121 "m121" 122 "m122" 123 "m123" 124 "m124" 125 "m125" 126 "m126" 127 "m127" 128 "m128" 129 "m129" 130 "m130"
+ZADD zset:large 131 "m131" 132 "m132" 133 "m133" 134 "m134" 135 "m135" 136 "m136" 137 "m137" 138 "m138" 139 "m139" 140 "m140"
+ZADD zset:large 141 "m141" 142 "m142" 143 "m143" 144 "m144" 145 "m145" 146 "m146" 147 "m147" 148 "m148" 149 "m149" 150 "m150"
+ZADD zset:large 151 "m151" 152 "m152" 153 "m153" 154 "m154" 155 "m155" 156 "m156" 157 "m157" 158 "m158" 159 "m159" 160 "m160"
+ZADD zset:large 161 "m161" 162 "m162" 163 "m163" 164 "m164" 165 "m165" 166 "m166" 167 "m167" 168 "m168" 169 "m169" 170 "m170"
+ZADD zset:large 171 "m171" 172 "m172" 173 "m173" 174 "m174" 175 "m175" 176 "m176" 177 "m177" 178 "m178" 179 "m179" 180 "m180"
+ZADD zset:large 181 "m181" 182 "m182" 183 "m183" 184 "m184" 185 "m185" 186 "m186" 187 "m187" 188 "m188" 189 "m189" 190 "m190"
+ZADD zset:large 191 "m191" 192 "m192" 193 "m193" 194 "m194" 195 "m195" 196 "m196" 197 "m197" 198 "m198" 199 "m199" 200 "m200"
+OBJECT ENCODING zset:large
+
+
+ECHO "=== 15. BZPOPMIN 阻塞弹出（延迟队列场景） ==="
+
+ECHO "--- 说明：BZPOPMIN 是阻塞命令，在管道脚本中会立即返回（无数据时返回 nil 或超时） ---"
+ECHO "--- 实际延迟队列请参考 Day05 README 的实战练习 3，单独开终端用 BZPOPMIN 阻塞等待 ---"
+
+DEL zset:delay
+ZADD zset:delay 1738360800 "order:1001" 1738360860 "order:1002" 1738360920 "order:1003"
+
+ECHO "--- 非阻塞式立即取（timeout=1 表示最多等 1 秒） ---"
+BZPOPMIN zset:delay 1
+
+
+ECHO "=== 16. 清理演示数据 ==="
+
+DEL zset:demo zset:lex zset:trim zset:pop zset:a zset:b zset:union zset:inter zset:small zset:large zset:delay
+
+ECHO "=== Day05 Sorted Set 命令演示完成 ==="
