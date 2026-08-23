@@ -1,0 +1,109 @@
+-- ============================================================
+-- 文件：01-rdb-config.redis
+-- 用途：RDB 持久化配置查询与操作演示
+-- 执行：redis-cli < 01-rdb-config.redis
+-- 场景：电商 Redis 实例的 RDB 快照配置与状态查看
+-- ============================================================
+
+ECHO "=== 1. 查看当前 RDB 触发配置（save 规则）==="
+ECHO "--- 默认 3 条规则：900s/1次、300s/10次、60s/10000次 ---"
+
+CONFIG GET save
+
+
+ECHO "=== 2. 修改 save 规则（演示用，可改回默认）==="
+
+ECHO "--- 临时调整为：5 分钟内 100 次修改就 BGSAVE ---"
+CONFIG SET save "300 100"
+
+ECHO "--- 验证修改 ---"
+CONFIG GET save
+
+ECHO "--- 恢复默认配置 ---"
+CONFIG SET save "900 1 300 10 60 10000"
+CONFIG GET save
+
+
+ECHO "=== 3. 查看 RDB 文件名与目录 ==="
+
+CONFIG GET dbfilename
+CONFIG GET dir
+
+
+ECHO "=== 4. 查看压缩与校验配置 ==="
+
+ECHO "--- rdbcompression：是否启用 LZF 压缩（默认 yes） ---"
+CONFIG GET rdbcompression
+
+ECHO "--- rdbchecksum：是否加 CRC64 校验和（默认 yes） ---"
+CONFIG GET rdbchecksum
+
+ECHO "--- stop-writes-on-bgsave-error：BGSAVE 失败时拒绝写入（默认 yes） ---"
+CONFIG GET stop-writes-on-bgsave-error
+
+
+ECHO "=== 5. 写入测试数据，触发 RDB 演示 ==="
+
+SET stock:product:1001 100
+SET stock:product:1002 50
+SET cart:user:1001 "product:1001,2"
+HSET leaderboard:sales product:1001 100
+
+
+ECHO "=== 6. BGSAVE 后台生成 RDB 快照 ==="
+ECHO "--- 非阻塞，主进程继续服务 ---"
+
+BGSAVE
+
+ECHO "--- 立即查询 BGSAVE 是否完成（rdb_bgsave_in_progress:0 表示完成） ---"
+INFO persistence
+
+
+ECHO "=== 7. 查看最近一次 BGSAVE 完成时间 ==="
+ECHO "--- LASTSAVE 返回 Unix 时间戳 ---"
+
+LASTSAVE
+
+ECHO "--- 转为可读时间（在 redis-cli 中可用 Lua 转换） ---"
+EVAL "local t = tonumber(ARGV[1]); return os.date('%Y-%m-%d %H:%M:%S', t)" 0 0
+
+
+ECHO "=== 8. 查看 INFO persistence 中的 RDB 状态字段 ==="
+ECHO "--- 关键字段： ---"
+ECHO "--- rdb_last_bgsave_status:ok 表示上次 BGSAVE 成功 ---"
+ECHO "--- rdb_last_save_time: 最近一次 SAVE 时间戳 ---"
+ECHO "--- rdb_last_bgsave_time_sec: 上次 BGSAVE 耗时（秒） ---"
+ECHO "--- rdb_changes_since_last_save: 自上次 SAVE 以来修改次数 ---"
+
+INFO persistence
+
+
+ECHO "=== 9. 查看最近一次 fork 耗时 ==="
+ECHO "--- latest_fork_usec 是评估大实例性能的关键指标 ---"
+ECHO "--- 通常 < 100ms 健康，> 1s 说明 fork 阻塞严重 ---"
+
+INFO stats
+
+
+ECHO "=== 10. SAVE 同步阻塞命令（生产禁用！） ==="
+ECHO "--- 仅在维护窗口或停服时使用，否则会阻塞所有客户端 ---"
+ECHO "--- 这里不实际执行，仅展示语法 ---"
+ECHO "语法示例：SAVE  （注意：会阻塞 Redis，本演示不执行）"
+
+
+ECHO "=== 11. 关闭 RDB 自动触发（纯缓存场景） ==="
+ECHO "--- 设置为空字符串即可关闭自动 BGSAVE ---"
+
+ECHO "--- CONFIG SET save \"\"  （本演示不实际关闭，保持默认） ---"
+
+
+ECHO "=== 12. 查看 DBSIZE 与内存占用 ==="
+
+DBSIZE
+
+INFO memory
+
+
+ECHO "=== RDB 演示结束 ==="
+ECHO "--- dump.rdb 文件生成在 dir 配置的目录下 ---"
+ECHO "--- 可手动备份该文件用于容灾 ---"

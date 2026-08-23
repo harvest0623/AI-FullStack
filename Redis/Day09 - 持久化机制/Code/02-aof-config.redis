@@ -1,0 +1,163 @@
+-- ============================================================
+-- 文件：02-aof-config.redis
+-- 用途：AOF 持久化配置与操作演示
+-- 执行：redis-cli < 02-aof-config.redis
+-- 场景：电商 Redis 实例开启 AOF 并验证刷盘策略与重写机制
+-- 注意：开启 AOF 后磁盘上会生成 appendonlydir（7.0+ 多文件结构）
+-- ============================================================
+
+ECHO "=== 1. 查看 AOF 开启状态 ==="
+ECHO "--- appendonly 默认 no，需手动开启 ---"
+
+CONFIG GET appendonly
+
+CONFIG GET appendfilename
+
+CONFIG GET aof-use-rdb-preamble
+
+
+ECHO "=== 2. 开启 AOF ==="
+ECHO "--- 开启后 Redis 会立即开始记录写命令到 AOF 文件 ---"
+ECHO "--- 7.0+ 会生成 appendonlydir 目录，内含 manifest 清单 ---"
+
+CONFIG SET appendonly yes
+
+ECHO "--- 验证开启状态 ---"
+CONFIG GET appendonly
+
+
+ECHO "=== 3. 查看刷盘策略 ==="
+ECHO "--- appendfsync 默认 everysec（每秒刷盘一次） ---"
+
+CONFIG GET appendfsync
+
+
+ECHO "=== 4. 演示三种刷盘策略（仅查询，不实际改 everysec 以外值） ==="
+
+ECHO "--- always: 每条命令刷盘，最安全最慢 ---"
+ECHO "示例：CONFIG SET appendfsync always"
+
+ECHO "--- everysec: 每秒刷盘，推荐 ---"
+ECHO "示例：CONFIG SET appendfsync everysec"
+
+ECHO "--- no: 由 OS 决定刷盘，最快可能丢更多 ---"
+ECHO "示例：CONFIG SET appendfsync no"
+
+ECHO "--- 当前策略保持 everysec ---"
+
+
+ECHO "=== 5. 写入测试数据（这些命令会被追加到 AOF 文件）==="
+
+SET stock:product:2001 80
+SET stock:product:2002 60
+INCR stock:product:2001
+HSET cart:user:2001 product:2001 2 product:2002 1
+ZADD leaderboard:sales 80 product:2001 60 product:2002
+
+
+ECHO "=== 6. 查看 INFO persistence 中的 AOF 状态 ==="
+ECHO "--- 关键字段： ---"
+ECHO "--- aof_enabled:1 表示 AOF 已开启 ---"
+ECHO "--- aof_rewrite_in_progress:1 表示正在重写 ---"
+ECHO "--- aof_last_bgrewrite_status:ok 上次重写成功 ---"
+ECHO "--- aof_current_size: 当前 AOF 文件大小（字节） ---"
+ECHO "--- aof_pending_fsync: 待刷盘的字节数 ---"
+
+INFO persistence
+
+
+ECHO "=== 7. 查看自动重写触发条件 ==="
+ECHO "--- auto-aof-rewrite-percentage:100 表示文件比上次重写后大一倍 ---"
+ECHO "--- auto-aof-rewrite-min-size:64mb 表示最小 64MB 才考虑重写 ---"
+
+CONFIG GET auto-aof-rewrite-percentage
+CONFIG GET auto-aof-rewrite-min-size
+
+ECHO "--- 演示：临时调小阈值，便于小数据量下触发 ---"
+CONFIG SET auto-aof-rewrite-percentage 50
+CONFIG SET auto-aof-rewrite-min-size 1mb
+
+ECHO "--- 恢复默认 ---"
+CONFIG SET auto-aof-rewrite-percentage 100
+CONFIG SET auto-aof-rewrite-min-size 64mb
+
+
+ECHO "=== 8. no-appendfsync-on-rewrite 配置 ==="
+ECHO "--- 重写期间是否暂停 fsync，避免双倍磁盘 IO ---"
+ECHO "--- 默认 no：重写期间仍按策略 fsync ---"
+
+CONFIG GET no-appendfsync-on-rewrite
+
+
+ECHO "=== 9. BGREWRITEAOF 手动触发重写 ==="
+ECHO "--- 类似 BGSAVE，fork 子进程在后台重写 ---"
+ECHO "--- 重写原理：遍历当前内存数据，生成最小命令集 ---"
+
+BGREWRITEAOF
+
+ECHO "--- 查看重写后状态 ---"
+INFO persistence
+
+
+ECHO "=== 10. 模拟 AOF 膨胀与重写效果 ==="
+ECHO "--- 对同一 key 反复 INCR，AOF 会记录每一条 ---"
+ECHO "--- 重写后只保留最终值的 SET 命令 ---"
+
+SET counter:views:page1 0
+
+ECHO "--- 模拟 50 次访问，AOF 累积 50 条 INCR ---"
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+INCR counter:views:page1
+
+ECHO "--- 当前值应为 10 ---"
+GET counter:views:page1
+
+ECHO "--- 触发重写，AOF 中 10 条 INCR 被压缩为一条 SET ---"
+BGREWRITEAOF
+
+INFO persistence
+
+
+ECHO "=== 11. 混合持久化验证 ==="
+ECHO "--- 4.0+ 引入，4.4+ 默认开启 aof-use-rdb-preamble ---"
+ECHO "--- 重写后 AOF 文件前半段为 RDB 二进制，后半段为增量命令 ---"
+
+CONFIG GET aof-use-rdb-preamble
+
+ECHO "--- 再次重写，观察文件结构变化 ---"
+BGREWRITEAOF
+
+
+ECHO "=== 12. AOF 文件位置与命名（7.0+ 多文件结构）==="
+ECHO "--- 7.0+ 默认生成 appendonlydir 目录 ---"
+ECHO "--- 内含 manifest 清单文件 + 多个 AOF 段文件 ---"
+ECHO "--- 可通过 CONFIG GET dir 查看目录 ---"
+
+CONFIG GET dir
+CONFIG GET appendfilename
+CONFIG GET appenddirname
+
+
+ECHO "=== 13. 性能影响观察 ==="
+ECHO "--- latest_fork_usec 反映重写时的 fork 耗时 ---"
+
+INFO stats
+
+
+ECHO "=== 14. 演示结束：关闭 AOF（仅演示，生产勿关）==="
+ECHO "--- 注意：关闭后已生成的 AOF 文件不会被删除 ---"
+ECHO "--- 重启时若 appendonly=no，将只加载 RDB ---"
+
+ECHO "--- CONFIG SET appendonly no  （本演示保持开启，不实际关闭） ---"
+
+
+ECHO "=== AOF 演示结束 ==="
+ECHO "--- 生产推荐：appendonly yes + appendfsync everysec + aof-use-rdb-preamble yes ---"
