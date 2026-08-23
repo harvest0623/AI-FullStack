@@ -1,0 +1,138 @@
+-- ============================================================
+-- 文件：01-transaction-demo.redis
+-- 用途：Redis 事务演示（MULTI/EXEC/DISCARD、命令错误 vs 运行时错误、WATCH 乐观锁库存扣减）
+-- 执行：redis-cli < 01-transaction-demo.redis
+-- 场景：电商库存扣减，演示事务的边界与 WATCH 乐观锁
+-- ============================================================
+
+-- 清理环境，避免上次残留数据干扰
+FLUSHDB
+
+ECHO "=== 1. MULTI / EXEC 基本事务 ==="
+ECHO "--- 开启事务，三命令入队后一起执行 ---"
+
+MULTI
+SET stock:product:1001 50
+SET stock:product:1002 30
+INCR stock:product:1001
+EXEC
+
+ECHO "--- 验证事务结果 ---"
+GET stock:product:1001
+GET stock:product:1002
+
+
+ECHO "=== 2. DISCARD 取消事务 ==="
+ECHO "--- 开启事务后丢弃，命令不会执行 ---"
+
+MULTI
+SET stock:product:1003 999
+INCR stock:product:1003
+DISCARD
+
+ECHO "--- 验证 stock:product:1003 应不存在（返回 nil） ---"
+EXISTS stock:product:1003
+
+
+ECHO "=== 3. 命令语法错误：整个事务被放弃 ==="
+ECHO "--- SETT 是不存在的命令，EXEC 前会报错，整个事务不执行 ---"
+
+MULTI
+SET stock:product:1004 10
+SETT stock:product:1005 20
+INCR stock:product:1004
+EXEC
+
+ECHO "--- 验证：1004、1005 都应不存在 ---"
+EXISTS stock:product:1004
+EXISTS stock:product:1005
+
+
+ECHO "=== 4. 运行时错误：不回滚，其他命令仍执行 ==="
+ECHO "--- 把 String 设为非数字后 INCR，运行时报错；但其他命令仍会成功 ---"
+
+MULTI
+SET stock:product:1006 "abc"
+INCR stock:product:1006
+SET stock:product:1007 88
+EXEC
+
+ECHO "--- 验证：1006 仍是 abc，1007 已被设置为 88 ---"
+GET stock:product:1006
+GET stock:product:1007
+
+
+ECHO "=== 5. WATCH 乐观锁：库存扣减成功场景 ==="
+ECHO "--- 先准备库存数据 ---"
+
+SET stock:product:2001 10
+
+ECHO "--- 监控 stock:product:2001，读取后事务扣减 ---"
+ECHO "--- 此脚本为单客户端顺序执行，模拟无并发，EXEC 应成功 ---"
+
+WATCH stock:product:2001
+GET stock:product:2001
+MULTI
+DECR stock:product:2001
+EXEC
+
+ECHO "--- 验证：库存应为 9 ---"
+GET stock:product:2001
+
+ECHO "--- EXEC 后 WATCH 自动取消，再次查询无需 UNWATCH ---"
+
+
+ECHO "=== 6. WATCH 失效演示（模拟并发修改） ==="
+ECHO "--- 这里用一条单独的 SET 模拟“别的客户端在 WATCH 后改了 key” ---"
+ECHO "--- 注意：实际生产中这一步发生在另一个 redis-cli 终端 ---"
+
+SET stock:product:2002 20
+
+WATCH stock:product:2002
+ECHO "--- 此处模拟另一客户端修改了 stock:product:2002 ---"
+SET stock:product:2002 5
+
+MULTI
+DECR stock:product:2002
+EXEC
+
+ECHO "--- EXEC 返回 (nil)，说明 WATCH 监控的 key 被改动，事务被放弃 ---"
+ECHO "--- 验证：库存仍为 5（DECR 未执行） ---"
+GET stock:product:2002
+
+ECHO "--- 失败后客户端应循环重试：UNWATCH -> WATCH -> MULTI -> EXEC ---"
+
+
+ECHO "=== 7. WATCH 后用 UNWATCH 主动取消监控 ==="
+
+SET stock:product:2003 15
+WATCH stock:product:2003
+UNWATCH
+
+ECHO "--- UNWATCH 后再修改 key，不影响后续事务（因为没有监控了） ---"
+SET stock:product:2003 8
+MULTI
+DECR stock:product:2003
+EXEC
+
+ECHO "--- 验证：库存应为 7 ---"
+GET stock:product:2003
+
+
+ECHO "=== 8. 批量事务：购物车初始化 ==="
+ECHO "--- 多条 HSET 用一个事务批量入队，减少网络往返 ---"
+
+MULTI
+HSET cart:user:1001 product:1001 2
+HSET cart:user:1001 product:1002 1
+HSET cart:user:1001 product:1003 5
+HSET cart:user:1002 product:1001 3
+HSET cart:user:1002 product:1004 1
+EXEC
+
+ECHO "--- 验证购物车数据 ---"
+HGETALL cart:user:1001
+HGETALL cart:user:1002
+
+
+ECHO "=== 演示结束 ==="

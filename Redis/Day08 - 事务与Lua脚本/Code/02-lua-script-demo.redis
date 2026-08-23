@@ -1,0 +1,105 @@
+-- ============================================================
+-- 文件：02-lua-script-demo.redis
+-- 用途：Lua 脚本演示（EVAL 基础、redis.call、KEYS/ARGV 传参、SCRIPT LOAD + EVALSHA、条件判断）
+-- 执行：redis-cli < 02-lua-script-demo.redis
+-- 场景：电商库存扣减的多种 Lua 写法对比
+-- ============================================================
+
+-- 清理环境
+FLUSHDB
+
+ECHO "=== 1. EVAL 最基础：返回常量 ==="
+ECHO "--- numkeys=0 表示没有 key 参数 ---"
+
+EVAL "return 'hello lua'" 0
+
+
+ECHO "=== 2. EVAL 调用 Redis 命令：SET / GET ==="
+ECHO "--- 用 redis.call 执行 SET，参数从 KEYS/ARGV 取 ---"
+
+EVAL "return redis.call('SET', KEYS[1], ARGV[1])" 1 stock:product:1001 50
+
+ECHO "--- 验证：库存应为 50 ---"
+GET stock:product:1001
+
+
+ECHO "=== 3. KEYS 与 ARGV 传参规范 ==="
+ECHO "--- 多 key 示例：同时设置商品库存和锁定标记 ---"
+
+EVAL "redis.call('SET', KEYS[1], ARGV[1]); redis.call('SET', KEYS[2], ARGV[2]); return 'OK'" 2 stock:product:1002 stock:lock:1002 30 0
+
+ECHO "--- 验证 ---"
+GET stock:product:1002
+GET stock:lock:1002
+
+
+ECHO "=== 4. Lua 变量与条件判断 ==="
+ECHO "--- 读库存，若 >= ARGV[2] 则扣减 ARGV[2] 个，返回 1；否则返回 0 ---"
+
+SET stock:product:1003 20
+
+EVAL "local stock = tonumber(redis.call('GET', KEYS[1])); local need = tonumber(ARGV[1]); if stock >= need then redis.call('DECRBY', KEYS[1], need); return 1 else return 0 end" 1 stock:product:1003 5
+
+ECHO "--- 验证：扣减 5 后库存应为 15 ---"
+GET stock:product:1003
+
+ECHO --- 再次扣减 100，库存不足，返回 0 ---
+
+EVAL "local stock = tonumber(redis.call('GET', KEYS[1])); local need = tonumber(ARGV[1]); if stock >= need then redis.call('DECRBY', KEYS[1], need); return 1 else return 0 end" 1 stock:product:1003 100
+
+ECHO "--- 验证：库存仍为 15（未扣减） ---"
+GET stock:product:1003
+
+
+ECHO "=== 5. redis.call vs redis.pcall ==="
+ECHO "--- redis.call 出错会中断脚本 ---"
+
+EVAL "redis.call('INCR', 'stock:product:not_exist_num_field'); return 'done'" 0
+
+ECHO "--- 上面会返回错误。下面用 redis.pcall 捕获错误，脚本继续执行 ---"
+
+EVAL "local ok, err = pcall(redis.call, 'INCR', 'a_non_string_key_2'); if ok then return 'success' else return 'caught error: ' .. tostring(err) end" 0
+
+
+ECHO "=== 6. SCRIPT LOAD + EVALSHA：缓存优化 ==="
+ECHO "--- 把库存扣减脚本缓存到 Redis，返回 sha1 摘要 ---"
+
+SCRIPT LOAD "local stock = tonumber(redis.call('GET', KEYS[1])); local need = tonumber(ARGV[1]); if stock == nil then return -1 elseif stock >= need then redis.call('DECRBY', KEYS[1], need); return 1 else return 0 end"
+
+ECHO "--- 上面的输出即为脚本的 sha1。下面用 SCRIPT EXISTS 验证是否已缓存 ---"
+ECHO "--- 注意：这里演示用法，sha1 请以你机器上实际输出为准 ---"
+
+SCRIPT EXISTS "0000000000000000000000000000000000000000"
+
+
+ECHO "=== 7. EVAL 批量操作：原子初始化排行榜 ==="
+ECHO "--- 一次 EVAL 写入多个商品销量，避免多次网络往返 ---"
+
+EVAL "redis.call('ZADD', KEYS[1], ARGV[1], 'product:2001'); redis.call('ZADD', KEYS[1], ARGV[2], 'product:2002'); redis.call('ZADD', KEYS[1], ARGV[3], 'product:2003'); return redis.call('ZCARD', KEYS[1])" 1 leaderboard:sales 100 80 60
+
+ECHO "--- 验证：排行榜应有 3 个成员 ---"
+ZRANGE leaderboard:sales 0 -1 WITHSCORES
+
+
+ECHO "=== 8. Lua 循环：批量 HSET 购物车 ==="
+ECHO "--- 通过 ARGV 传入多对商品/数量，循环写入 Hash ---"
+
+DEL cart:user:5001
+
+EVAL "for i=1, #ARGV, 2 do redis.call('HSET', KEYS[1], ARGV[i], ARGV[i+1]) end return redis.call('HLEN', KEYS[1])" 1 cart:user:5001 product:1001 2 product:1002 1 product:1003 5
+
+ECHO "--- 验证：购物车应有 3 个商品 ---"
+HGETALL cart:user:5001
+
+
+ECHO "=== 9. SCRIPT FLUSH 清空脚本缓存 ==="
+ECHO "--- 演示用法，注意：生产环境慎用，会清空所有已缓存的脚本 ---"
+
+SCRIPT FLUSH
+
+ECHO "--- 验证：缓存已清空（返回 0 表示不存在） ---"
+SCRIPT EXISTS "0000000000000000000000000000000000000000"
+
+
+ECHO "=== 演示结束 ==="
+ECHO "--- 完整的原子库存扣减脚本见 03-lua-inventory.lua ---"
