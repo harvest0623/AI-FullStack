@@ -1,0 +1,368 @@
+ECHO "============================================================"
+ECHO "文件用途：淘汰策略演示"
+ECHO "内容：构造不同类型 Key、设置过期、切换淘汰策略、"
+ECHO "      观察淘汰行为、慢查询、bigkey 发现"
+ECHO "适用：Redis 7.0+  redis-cli < 02-eviction-strategy.redis"
+ECHO "============================================================"
+
+FLUSHDB
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 一、淘汰策略概述                                ==="
+ECHO "======================================================"
+ECHO "8 种淘汰策略："
+ECHO "  noeviction       : 不淘汰，写入报 OOM（默认）"
+ECHO "  allkeys-lru      : 所有 Key 中淘汰最久未使用（推荐纯缓存）"
+ECHO "  allkeys-lfu      : 所有 Key 中淘汰最少使用（8.0+ 推荐）"
+ECHO "  allkeys-random   : 所有 Key 中随机淘汰"
+ECHO "  volatile-lru     : 设了过期的 Key 中 LRU"
+ECHO "  volatile-lfu     : 设了过期的 Key 中 LFU"
+ECHO "  volatile-random  : 设了过期的 Key 中随机淘汰"
+ECHO "  volatile-ttl     : 设了过期的 Key 中 TTL 最短优先"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 二、构造测试数据                                ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 2.1 构造不同类型 Key（部分设过期，部分不设）==="
+
+SET noexpire:config:1 "{\"app\":\"shop\",\"version\":\"1.0\"}"
+
+SET noexpire:config:2 "{\"app\":\"pay\",\"version\":\"2.0\"}"
+
+SET cache:product:lru1 "{\"id\":1,\"name\":\"A\"}" EX 300
+
+SET cache:product:lru2 "{\"id\":2,\"name\":\"B\"}" EX 300
+
+SET cache:product:lru3 "{\"id\":3,\"name\":\"C\"}" EX 100
+
+SET cache:product:lru4 "{\"id\":4,\"name\":\"D\"}" EX 200
+
+ECHO ""
+ECHO "=== 2.2 模拟访问热度（影响 LRU/LFU 判断）==="
+
+GET cache:product:lru1
+
+GET cache:product:lru1
+
+GET cache:product:lru1
+
+GET cache:product:lru2
+
+ECHO "lru1 被访问多次（热点），lru3/lru4 较少访问（冷数据）"
+
+ECHO ""
+ECHO "=== 2.3 查看各 Key 内存占用对比 ==="
+
+MEMORY USAGE noexpire:config:1
+
+MEMORY USAGE cache:product:lru1
+
+MEMORY USAGE cache:product:lru3
+
+ECHO ""
+ECHO "=== 2.4 当前 Key 概览 ==="
+
+DBSIZE
+
+SCAN 0
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 三、noeviction 策略演示（默认）                 ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 3.1 设置为 noeviction ==="
+
+CONFIG SET maxmemory 2mb
+
+CONFIG SET maxmemory-policy noeviction
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "=== 3.2 写入数据直到 OOM ==="
+ECHO "noeviction 下内存满时写入会返回 OOM 错误"
+
+EVAL "for i = 1, 50 do local ok, err = pcall(redis.call, 'SET', 'oom:test:' .. i, string.rep('x', 30000)); end; return 'done'" 0
+
+ECHO "部分写入会失败（OOM），但已有 Key 不受影响"
+
+DBSIZE
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 四、allkeys-lru 策略演示                        ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 4.1 切换为 allkeys-lru ==="
+
+FLUSHDB
+
+CONFIG SET maxmemory-policy allkeys-lru
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "=== 4.2 重新构造数据（含访问热度）==="
+
+SET hot:key:1 "hot_value_1"
+
+SET hot:key:2 "hot_value_2"
+
+SET cold:key:1 "cold_value_1"
+
+SET cold:key:2 "cold_value_2"
+
+GET hot:key:1
+
+GET hot:key:1
+
+GET hot:key:2
+
+ECHO "hot:key 被访问，cold:key 未访问"
+
+ECHO ""
+ECHO "=== 4.3 写入大量数据触发淘汰 ==="
+ECHO "allkeys-lru 会淘汰最久未使用的 Key"
+
+EVAL "for i = 1, 100 do redis.call('SET', 'evict:lrutest:' .. i, string.rep('y', 20000)); end; return 'done'" 0
+
+ECHO ""
+ECHO "=== 4.4 检查 hot/cold Key 是否被淘汰 ==="
+ECHO "hot:key 应优先保留（最近被访问），cold:key 更可能被淘汰"
+
+EXISTS hot:key:1
+
+EXISTS hot:key:2
+
+EXISTS cold:key:1
+
+EXISTS cold:key:2
+
+DBSIZE
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 五、volatile-lru 策略演示                       ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 5.1 切换为 volatile-lru ==="
+
+FLUSHDB
+
+CONFIG SET maxmemory-policy volatile-lru
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "=== 5.2 构造数据：部分设过期、部分不设过期 ==="
+
+SET noexpire:data:1 "persistent_1"
+
+SET noexpire:data:2 "persistent_2"
+
+SET expire:data:1 "will_expire_1" EX 300
+
+SET expire:data:2 "will_expire_2" EX 300
+
+ECHO "volatile-lru 只在设了过期的 Key 中淘汰"
+
+ECHO ""
+ECHO "=== 5.3 写入数据触发淘汰 ==="
+
+EVAL "for i = 1, 100 do redis.call('SET', 'evict:voltest:' .. i, string.rep('z', 20000), 'EX', 300); end; return 'done'" 0
+
+ECHO ""
+ECHO "=== 5.4 检查不设过期的 Key 是否被保留 ==="
+ECHO "noexpire:data 应被保留（不在淘汰范围内）"
+
+EXISTS noexpire:data:1
+
+EXISTS noexpire:data:2
+
+ECHO "如果所有 Key 都没设过期，volatile-* 策略退化为 noeviction（写入 OOM）"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 六、volatile-ttl 策略演示                       ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 6.1 切换为 volatile-ttl ==="
+
+FLUSHDB
+
+CONFIG SET maxmemory-policy volatile-ttl
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "=== 6.2 构造不同 TTL 的 Key ==="
+
+SET short:ttl:1 "short1" EX 50
+
+SET short:ttl:2 "short2" EX 80
+
+SET long:ttl:1 "long1" EX 3600
+
+SET long:ttl:2 "long2" EX 3600
+
+ECHO "volatile-ttl 优先淘汰 TTL 最短的 Key"
+
+ECHO ""
+ECHO "=== 6.3 写入数据触发淘汰 ==="
+
+EVAL "for i = 1, 100 do redis.call('SET', 'evict:ttltest:' .. i, string.rep('w', 20000), 'EX', 600); end; return 'done'" 0
+
+ECHO ""
+ECHO "=== 6.4 检查 short:ttl 是否优先被淘汰 ==="
+
+EXISTS short:ttl:1
+
+EXISTS long:ttl:1
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 七、恢复配置                                    ==="
+ECHO "======================================================"
+
+FLUSHDB
+
+CONFIG SET maxmemory 0
+
+CONFIG SET maxmemory-policy noeviction
+
+CONFIG GET maxmemory
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 八、慢查询日志                                  ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 8.1 查看慢查询配置 ==="
+
+CONFIG GET slowlog-log-slower-than
+
+CONFIG GET slowlog-max-len
+
+ECHO "默认 10000 微秒（10ms）记录慢查询，最多保留 128 条"
+
+ECHO ""
+ECHO "=== 8.2 设置更低的阈值便于观察 ==="
+
+CONFIG SET slowlog-log-slower-than 0
+
+CONFIG GET slowlog-log-slower-than
+
+ECHO ""
+ECHO "=== 8.3 执行一些命令产生慢查询 ==="
+
+SET slowlog:test:1 "value"
+
+GET slowlog:test:1
+
+EVAL "return redis.call('SET', KEYS[1], ARGV[1])" 1 slowlog:test:2 "lua_value"
+
+ECHO ""
+ECHO "=== 8.4 查看慢查询日志 ==="
+
+SLOWLOG LEN
+
+SLOWLOG GET 10
+
+ECHO ""
+ECHO "=== 8.5 重置慢查询日志 ==="
+
+SLOWLOG RESET
+
+SLOWLOG LEN
+
+ECHO ""
+ECHO "恢复慢查询阈值"
+
+CONFIG SET slowlog-log-slower-than 10000
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 九、bigkey 发现演示                             ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 9.1 构造 bigkey ==="
+ECHO "String > 10KB、List/Hash/Set/ZSet 元素 > 5000 视为 bigkey"
+
+SET bigkey:str:1 "start_"
+
+APPEND bigkey:str:1 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+EVAL "local s = redis.call('GET', KEYS[1]); for i = 1, 50 do s = s .. string.rep('x', 500); end; redis.call('SET', KEYS[1], s); return redis.call('STRLEN', KEYS[1])" 1 bigkey:str:1
+
+EVAL "for i = 1, 6000 do redis.call('HSET', KEYS[1], 'field_' .. i, 'value_' .. i); end; return redis.call('HLEN', KEYS[1])" 1 bigkey:hash:1
+
+EVAL "for i = 1, 6000 do redis.call('LPUSH', KEYS[1], 'item_' .. i); end; return redis.call('LLEN', KEYS[1])" 1 bigkey:list:1
+
+ECHO ""
+ECHO "=== 9.2 用 MEMORY USAGE 查看 bigkey 占用 ==="
+
+MEMORY USAGE bigkey:str:1
+
+MEMORY USAGE bigkey:hash:1
+
+MEMORY USAGE bigkey:list:1
+
+ECHO ""
+ECHO "=== 9.3 bigkey 危害演示 ==="
+ECHO "DEL 大 Key 会阻塞主线程（同步删除）"
+
+ECHO "安全删除：UNLINK 异步删除（4.0+，后台释放内存）"
+
+UNLINK bigkey:hash:1
+
+UNLINK bigkey:list:1
+
+ECHO ""
+ECHO "=== 9.4 分批删除大 Hash（HSCAN + HDEL）思路 ==="
+ECHO "当 UNLINK 不可用时，用 HSCAN 分批 HDEL："
+ECHO "  HSCAN bigkey:hash 0 COUNT 100 → 逐批 HDEL"
+
+ECHO ""
+ECHO "=== 9.5 命令行 bigkey 扫描工具 ==="
+ECHO "在终端执行（非 redis-cli 命令）："
+ECHO "  redis-cli --bigkeys          扫描各类型最大 Key"
+ECHO "  redis-cli --hotkeys          扫描热点 Key（需 allkeys-lfu）"
+
+ECHO ""
+ECHO "=== 9.6 热点 Key 发现 ==="
+ECHO "redis-cli --hotkeys 需配置 maxmemory-policy 为 allkeys-lfu"
+
+CONFIG SET maxmemory-policy allkeys-lfu
+
+ECHO "访问几次某个 Key 制造热度"
+
+GET bigkey:str:1
+
+GET bigkey:str:1
+
+GET bigkey:str:1
+
+ECHO "在终端执行 redis-cli --hotkeys 可看到热点排行"
+
+ECHO ""
+ECHO "恢复配置"
+
+CONFIG SET maxmemory-policy noeviction
+
+FLUSHDB
+
+ECHO ""
+ECHO "=== 演示结束 ==="

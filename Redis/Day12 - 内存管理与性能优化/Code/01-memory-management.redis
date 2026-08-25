@@ -1,0 +1,216 @@
+ECHO "============================================================"
+ECHO "文件用途：内存管理演示"
+ECHO "内容：INFO memory、MEMORY USAGE 各类型 key、MEMORY STATS、"
+ECHO "      设置 maxmemory 与淘汰策略、构造淘汰场景"
+ECHO "适用：Redis 7.0+  redis-cli < 01-memory-management.redis"
+ECHO "============================================================"
+
+FLUSHDB
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 一、内存信息查看：INFO memory                  ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 1.1 查看内存概况 ==="
+
+INFO memory
+
+ECHO ""
+ECHO "=== 1.2 关键指标说明 ==="
+ECHO "used_memory          : Redis 分配器分配的内存（逻辑内存）"
+ECHO "used_memory_rss      : 操作系统视角的物理内存（RSS）"
+ECHO "used_memory_peak     : 内存使用历史峰值"
+ECHO "mem_fragmentation_ratio : used_memory_rss / used_memory（碎片率）"
+ECHO "  - 理想值 1.0~1.5：正常"
+ECHO "  - >1.5：碎片多，内存浪费"
+ECHO "  - <1.0：Redis 在 swap，性能极差"
+
+ECHO ""
+ECHO "单独查看关键指标（用 CONFIG GET / INFO 筛选）"
+
+CONFIG GET maxmemory
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 二、MEMORY USAGE 单个 Key 内存占用             ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 2.1 构造不同数据类型的 Key ==="
+
+SET str:user:1001 "{\"id\":1001,\"name\":\"张三\",\"email\":\"zhangsan@example.com\"}"
+
+HSET hash:user:2001 id 2001 name "李四" email "lisi@example.com" level 5
+
+LPUSH list:logs:3001 "log_1" "log_2" "log_3" "log_4" "log_5"
+
+SADD set:tags:4001 "手机" "电子" "数码" "苹果"
+
+ZADD zset:rank:5001 100 "user_a" 90 "user_b" 80 "user_c" 70 "user_d"
+
+ECHO ""
+ECHO "=== 2.2 查看各类型 Key 的内存占用 ==="
+
+MEMORY USAGE str:user:1001
+
+MEMORY USAGE hash:user:2001
+
+MEMORY USAGE list:logs:3001
+
+MEMORY USAGE set:tags:4001
+
+MEMORY USAGE zset:rank:5001
+
+ECHO ""
+ECHO "=== 2.3 SAMPLES 参数控制采样精度 ==="
+ECHO "对于大 Key，SAMPLES 越大越精确但越慢"
+
+MEMORY USAGE str:user:1001 SAMPLES 0
+
+ECHO ""
+ECHO "=== 2.4 对比 String 存 JSON vs Hash 存对象 ==="
+ECHO "同样是用户对象，Hash 通常更省内存（ziplist 编码时）"
+
+SET str:user:6001 "{\"id\":6001,\"name\":\"王五\",\"email\":\"wangwu@example.com\",\"level\":3}"
+
+HSET hash:user:6001 id 6001 name "王五" email "wangwu@example.com" level 3
+
+MEMORY USAGE str:user:6001
+
+MEMORY USAGE hash:user:6001
+
+ECHO "（小数据量差异不明显，大数据量时 Hash 优势显著）"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 三、MEMORY STATS 详细内存统计                  ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 3.1 查看详细内存统计 ==="
+
+MEMORY STATS
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 四、MEMORY DOCTOR 内存诊断                     ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 4.1 内存诊断建议 ==="
+
+MEMORY DOCTOR
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 五、maxmemory 配置与淘汰策略                   ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 5.1 查看当前 maxmemory 与淘汰策略 ==="
+
+CONFIG GET maxmemory
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "=== 5.2 设置 maxmemory（演示设为 2MB，便于观察淘汰）==="
+ECHO "注意：生产环境应根据机器内存合理设置（如物理内存的 60~70%）"
+
+CONFIG SET maxmemory 2mb
+
+CONFIG GET maxmemory
+
+ECHO ""
+ECHO "=== 5.3 设置淘汰策略为 allkeys-lru ==="
+
+CONFIG SET maxmemory-policy allkeys-lru
+
+CONFIG GET maxmemory-policy
+
+ECHO ""
+ECHO "=== 5.4 构造淘汰场景 ==="
+ECHO "不断写入新 Key，当内存达到 maxmemory 时触发淘汰"
+
+EVAL "for i = 1, 100 do redis.call('SET', 'evict:test:' .. i, string.rep('x', 20000)); end; return 'written_100_keys'" 0
+
+ECHO "查看写入后剩余的 Key 数量（部分已被 LRU 淘汰）"
+
+DBSIZE
+
+ECHO ""
+ECHO "=== 5.5 检查哪些 Key 还在 ==="
+
+SCAN 0
+
+ECHO ""
+ECHO "=== 5.6 查看淘汰后的内存状态 ==="
+
+INFO memory
+
+ECHO ""
+ECHO "=== 5.7 恢复 maxmemory 设置（避免影响后续操作）==="
+
+CONFIG SET maxmemory 0
+
+CONFIG GET maxmemory
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 六、过期策略验证（呼应 Day02）                  ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 6.1 惰性删除：访问过期 Key 时才删除 ==="
+
+SET expire:test:lazy "data" EX 2
+
+ECHO "2 秒后访问（已过期，惰性删除返回 nil）"
+
+GET expire:test:lazy
+
+ECHO ""
+ECHO "=== 6.2 定期删除：后台每 100ms 抽样检查 ==="
+ECHO "配置项：hz（默认 10，即每秒 10 次定期删除周期）"
+
+CONFIG GET hz
+
+ECHO "过期 Key 比例超过 25% 则继续检查，避免内存堆积"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 七、碎片率与内存整理                            ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 7.1 查看当前碎片率 ==="
+
+INFO memory
+
+ECHO ""
+ECHO "=== 7.2 主动碎片整理（需开启 activedefrag，4.0+）==="
+
+CONFIG GET activedefrag
+
+ECHO "开启主动碎片整理（需编译时启用 Jemalloc）"
+
+CONFIG SET activedefrag yes
+
+ECHO ""
+ECHO "=== 7.3 查看整理后状态 ==="
+
+MEMORY MALLOC-STATS
+
+ECHO ""
+ECHO "恢复设置（演示环境清理）"
+
+CONFIG SET activedefrag no
+
+FLUSHDB
+
+ECHO ""
+ECHO "=== 演示结束 ==="
