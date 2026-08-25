@@ -1,0 +1,194 @@
+ECHO "============================================================"
+ECHO "文件用途：缓存三大问题演示"
+ECHO "内容：缓存穿透（null 值缓存）、缓存击穿（SETNX 互斥锁）、缓存雪崩（随机过期）"
+ECHO "适用：Redis 7.0+  redis-cli < 02-cache-problems.redis"
+ECHO "============================================================"
+
+FLUSHDB
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 一、缓存穿透（Cache Penetration）              ==="
+ECHO "=== 查询不存在的数据，缓存和 DB 都没有，每次打 DB   ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 1.1 问题复现：查询不存在的商品 ID 88888 ==="
+
+GET cache:product:88888
+
+ECHO "返回 nil → 应用回源查 DB → DB 也没有 → 什么都不做 → 下次请求继续打 DB"
+
+ECHO ""
+ECHO "=== 1.2 解决方案一：null 值缓存 ==="
+ECHO "DB 查询为空时，缓存空值并设置短过期时间（60~300s）"
+
+SET cache:product:88888 "" EX 60
+
+ECHO "再次查询命中空值缓存，应用识别为空值直接返回，不再访问 DB"
+
+GET cache:product:88888
+
+ECHO "空值缓存 TTL"
+
+TTL cache:product:88888
+
+ECHO ""
+ECHO "=== 1.3 解决方案二：布隆过滤器拦截 ==="
+ECHO "用 Set 模拟合法商品 ID 白名单（生产用 RedisBloom 模块 BF.ADD）"
+
+SADD bloom:filter:users 1001 1002 1003 1004 1005
+
+ECHO "请求商品 1001 → 布隆过滤器判断存在 → 放行查缓存/DB"
+
+SISMEMBER bloom:filter:users 1001
+
+ECHO "请求商品 88888 → 布隆过滤器判断不存在 → 直接拦截返回"
+
+SISMEMBER bloom:filter:users 88888
+
+ECHO ""
+ECHO "=== 1.4 null 值缓存 vs 布隆过滤器 对比 ==="
+ECHO "null 值缓存：实现简单，但占内存、需维护空值过期"
+ECHO "布隆过滤器：省内存、拦截高效，但有误判率、需预热"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 二、缓存击穿（Cache Breakdown）                ==="
+ECHO "=== 热点 Key 过期的瞬间，大量并发请求同时打 DB      ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 2.1 准备：热点商品缓存（即将过期）==="
+
+SET cache:product:5001 "{\"id\":5001,\"name\":\"秒杀iPhone\",\"price\":4999,\"stock\":100}" EX 5
+
+GET cache:product:5001
+
+ECHO "等待 5 秒后缓存过期...（实际执行时等待）"
+
+ECHO ""
+ECHO "=== 2.2 解决方案：互斥锁（SETNX）重建缓存 ==="
+ECHO "流程："
+ECHO "  1. 查缓存未命中"
+ECHO "  2. 用 SETNX 抢互斥锁 lock:cache:product:5001"
+ECHO "  3. 抢到锁 → 查 DB → 写缓存 → 释放锁"
+ECHO "  4. 没抢到锁 → 短暂等待后重试查缓存"
+
+ECHO "步骤1：模拟缓存已过期（删除）"
+
+DEL cache:product:5001
+
+ECHO "步骤2：第一个请求抢到互斥锁（SET NX EX，原子操作）"
+
+SET lock:cache:product:5001 "request_uuid_001" NX EX 10
+
+ECHO "步骤3：抢到锁的请求查 DB（模拟）并回写缓存"
+
+SET cache:product:5001 "{\"id\":5001,\"name\":\"秒杀iPhone\",\"price\":4999,\"stock\":100}" EX 3600
+
+ECHO "步骤4：释放互斥锁（实际应用用 Lua 脚本安全释放，见 Day11/03）"
+
+DEL lock:cache:product:5001
+
+ECHO "步骤5：其他请求重试查缓存（命中）"
+
+GET cache:product:5001
+
+ECHO ""
+ECHO "=== 2.3 完整互斥锁流程（Lua 脚本模拟）==="
+ECHO "Lua 脚本：查缓存未命中 → 抢锁 → 回源 → 写缓存 → 释放锁（全部原子）"
+
+EVAL "local cache_key = KEYS[1]; local lock_key = KEYS[2]; local lock_val = ARGV[1]; local cache_val = ARGV[2]; local cached = redis.call('GET', cache_key); if cached then return cached end; local ok = redis.call('SET', lock_key, lock_val, 'NX', 'EX', 10); if not ok then return 'LOCK_BUSY_RETRY' end; redis.call('SET', cache_key, cache_val, 'EX', 3600); redis.call('DEL', lock_key); return cache_val" 2 cache:product:5002 lock:cache:product:5002 "uuid_002" "{\"id\":5002,\"name\":\"热门商品\",\"price\":2999}"
+
+ECHO "再次执行同一脚本（缓存已命中，直接返回）"
+
+EVAL "local cache_key = KEYS[1]; local lock_key = KEYS[2]; local lock_val = ARGV[1]; local cache_val = ARGV[2]; local cached = redis.call('GET', cache_key); if cached then return cached end; local ok = redis.call('SET', lock_key, lock_val, 'NX', 'EX', 10); if not ok then return 'LOCK_BUSY_RETRY' end; redis.call('SET', cache_key, cache_val, 'EX', 3600); redis.call('DEL', lock_key); return cache_val" 2 cache:product:5002 lock:cache:product:5002 "uuid_003" "{\"id\":5002,\"name\":\"热门商品\",\"price\":2999}"
+
+ECHO ""
+ECHO "=== 2.4 解决方案补充：热点 Key 逻辑过期（永不过期）==="
+ECHO "不设 TTL，value 内嵌逻辑过期时间，应用判断过期后异步刷新"
+
+SET cache:product:hot6001 "{\"id\":6001,\"name\":\"超级热点商品\",\"price\":199,\"logic_expire\":1785217800}"
+
+ECHO "应用读取后判断 logic_expire < 当前时间 → 异步线程刷新，当前请求返回旧值"
+
+GET cache:product:hot6001
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 三、缓存雪崩（Cache Avalanche）                 ==="
+ECHO "=== 大量 Key 同时过期，或 Redis 宕机，全部请求打 DB ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 3.1 问题复现：批量缓存使用相同过期时间 ==="
+
+SET cache:product:7001 "{\"id\":7001,\"name\":\"P1\"}" EX 3600
+SET cache:product:7002 "{\"id\":7002,\"name\":\"P2\"}" EX 3600
+SET cache:product:7003 "{\"id\":7003,\"name\":\"P3\"}" EX 3600
+
+ECHO "三个 Key 同时 3600s 后过期 → 同一时刻全部失效 → 请求打 DB"
+
+ECHO ""
+ECHO "=== 3.2 解决方案一：随机过期时间 ==="
+ECHO "过期时间 = 基础 TTL + 随机偏移量（打散失效时间点）"
+
+EVAL "for i = 1, 5 do local id = 8000 + i; local base = 3600; local jitter = math.random(1, 600); redis.call('SET', 'cache:product:' .. id, '{\"id\":' .. id .. '}', 'EX', base + jitter); end; return 'batch_set_done'" 0
+
+ECHO "查看各 Key TTL（各不相同，已打散）"
+
+TTL cache:product:8001
+
+TTL cache:product:8002
+
+TTL cache:product:8003
+
+TTL cache:product:8004
+
+TTL cache:product:8005
+
+ECHO ""
+ECHO "=== 3.3 解决方案二：熔断降级（限流 + 默认值）==="
+ECHO "当 DB 压力过大时，触发限流，返回默认值/降级页面"
+ECHO "用 INCR 实现简单限流器（每秒最多 100 请求）"
+
+SET rate:limit:db:query 0 EX 1
+
+INCR rate:limit:db:query
+
+ECHO "超过阈值（100）则返回降级默认值，保护 DB"
+
+ECHO ""
+ECHO "=== 3.4 解决方案三：多级缓存 ==="
+ECHO "本地缓存（Caffeine）→ Redis → DB，减少对 Redis/DB 的依赖"
+
+ECHO "一级缓存：本地缓存（应用内存，无 Redis 命令）"
+ECHO "二级缓存：Redis（cache:product:9001）"
+
+SET cache:product:9001 "{\"id\":9001,\"name\":\"多级缓存商品\"}" EX 3600
+
+GET cache:product:9001
+
+ECHO "三级：DB（兜底数据源）"
+
+ECHO ""
+ECHO "=== 3.5 解决方案四：Redis 高可用 ==="
+ECHO "主从复制 + 哨兵 Sentinel + 集群 Cluster（Day10 内容）"
+ECHO "确保 Redis 单点故障时仍可服务，避免整体雪崩"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 四、三大问题对比总结                           ==="
+ECHO "======================================================"
+ECHO "穿透：查不存在数据 → null 值缓存 / 布隆过滤器"
+ECHO "击穿：热点 Key 过期 → 互斥锁 / 逻辑过期"
+ECHO "雪崩：大量 Key 同时过期 → 随机过期 / 熔断降级 / 高可用"
+
+ECHO ""
+ECHO "=== 当前库 Key 概览 ==="
+
+DBSIZE
+
+ECHO ""
+ECHO "=== 演示结束 ==="

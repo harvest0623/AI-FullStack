@@ -1,0 +1,222 @@
+ECHO "============================================================"
+ECHO "文件用途：分布式锁与限流器完整演示"
+ECHO "内容：SET NX EX 加锁、Lua 安全释放锁、看门狗续期、固定窗口/滑动窗口限流"
+ECHO "适用：Redis 7.0+  redis-cli < 03-distributed-lock.redis"
+ECHO "============================================================"
+
+FLUSHDB
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 一、分布式锁演进与正确实现                     ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 1.1 v1 演进：SETNX + DEL（无过期，可能死锁）==="
+ECHO "问题：如果加锁后进程崩溃，锁永远不释放 → 死锁"
+
+SETNX stock:lock:1001 "lock_v1"
+
+ECHO "返回 1 表示加锁成功"
+
+GET stock:lock:1001
+
+DEL stock:lock:1001
+
+ECHO ""
+ECHO "=== 1.2 v2 演进：SETNX + EXPIRE（两步非原子）==="
+ECHO "问题：SETNX 成功后、EXPIRE 之前宕机 → 锁无过期 → 死锁"
+
+SETNX stock:lock:1001 "lock_v2"
+
+EXPIRE stock:lock:1001 10
+
+DEL stock:lock:1001
+
+ECHO ""
+ECHO "=== 1.3 v3 正确加锁：SET key value NX EX（原子操作）==="
+ECHO "生产可用：加锁与设过期原子完成，避免死锁"
+
+SET stock:lock:1001 "uuid-aaa-111" NX EX 10
+
+ECHO "再次加锁（同一 Key，返回 nil 表示失败）"
+
+SET stock:lock:1001 "uuid-bbb-222" NX EX 10
+
+ECHO "查看锁的 value 与 TTL"
+
+GET stock:lock:1001
+
+TTL stock:lock:1001
+
+ECHO ""
+ECHO "=== 1.4 v4 正确释放锁：Lua 脚本判断 value 再 DEL ==="
+ECHO "问题：直接 DEL 可能误删别人的锁（锁过期后被他人加锁，自己却删了）"
+ECHO "方案：GET → 比较 value == uuid → DEL，用 Lua 保证原子性"
+
+ECHO "尝试用错误的 uuid 释放锁（失败，返回 0）"
+
+EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end" 1 stock:lock:1001 "uuid-wrong"
+
+ECHO "锁仍然存在"
+
+GET stock:lock:1001
+
+ECHO "用正确的 uuid 释放锁（成功，返回 1）"
+
+EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end" 1 stock:lock:1001 "uuid-aaa-111"
+
+ECHO "锁已释放"
+
+GET stock:lock:1001
+
+ECHO ""
+ECHO "=== 1.5 完整加锁+释放锁流程（库存扣减场景）==="
+
+ECHO "步骤1：初始化库存"
+
+SET stock:product:1001 100
+
+ECHO "步骤2：加分布式锁（SET NX EX）"
+
+SET stock:lock:1001 "tx-uuid-001" NX EX 10
+
+ECHO "步骤3：执行业务（库存扣减，Lua 保证原子）"
+
+EVAL "local stock = tonumber(redis.call('GET', KEYS[1])); if stock and stock > 0 then redis.call('DECR', KEYS[1]); return stock - 1 else return -1 end" 1 stock:product:1001
+
+ECHO "步骤4：安全释放锁（Lua 脚本）"
+
+EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end" 1 stock:lock:1001 "tx-uuid-001"
+
+ECHO "步骤5：查看剩余库存"
+
+GET stock:product:1001
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 二、看门狗机制（锁续期）模拟                  ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 2.1 场景：业务执行时间超过锁 TTL ==="
+ECHO "方案：后台线程定时（TTL/3）延长锁过期时间，业务未完成锁不过期"
+
+ECHO "步骤1：加锁，初始 TTL=30s"
+
+SET stock:lock:2002 "watchdog-uuid" NX EX 30
+
+ECHO "步骤2：模拟看门狗续期（Lua 判断 value 匹配后 EXPIRE）"
+
+EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('EXPIRE', KEYS[1], ARGV[2]) else return 0 end" 2 stock:lock:2002 "watchdog-uuid" 30
+
+ECHO "续期后 TTL（仍接近 30s）"
+
+TTL stock:lock:2002
+
+ECHO "步骤3：业务完成，安全释放锁"
+
+EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end" 1 stock:lock:2002 "watchdog-uuid"
+
+ECHO ""
+ECHO "=== 2.2 Redisson 看门狗机制说明 ==="
+ECHO "Redisson 默认：加锁 TTL=30s，每 10s（TTL/3）续期一次"
+ECHO "业务未完成 → 自动续期；业务完成 → 释放锁并停止续期"
+ECHO "避免手动设置 TTL 的两难：太短业务没完成锁就过期，太长宕机后锁占用久"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 三、Redlock 算法说明（多节点加锁）            ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "Redlock 流程（应对主从切换丢锁问题）："
+ECHO "  1. 客户端获取当前时间 T1"
+ECHO "  2. 依次向 N 个（通常 5 个）独立 Redis 实例请求 SET NX EX 加锁"
+ECHO "  3. 超过半数（N/2+1，即 3 个）成功且耗时 < TTL → 加锁成功"
+ECHO "  4. 否则向所有实例释放锁，加锁失败"
+ECHO ""
+ECHO "争议：Martin Kleppmann 认为 Redlock 不安全（GC 暂停/时钟漂移）"
+ECHO "      antirez 反驳：分布式锁追求效率而非正确性，Redlock 足够"
+ECHO "实践：强一致性场景用 Zookeeper/etcd，高并发效率场景用 Redis 锁"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 四、限流器实现                                ==="
+ECHO "======================================================"
+
+ECHO ""
+ECHO "=== 4.1 固定窗口计数器限流 ==="
+ECHO "场景：用户 user:3001 调用 api:order，每分钟最多 10 次"
+ECHO "实现：INCR 计数 + 首次请求 EXPIRE 设置窗口"
+
+ECHO "模拟连续 12 次请求（用 Lua 实现固定窗口限流）"
+
+EVAL "local key = KEYS[1]; local limit = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local current = redis.call('INCR', key); if current == 1 then redis.call('EXPIRE', key, window); end; if current <= limit then return 'ALLOW count=' .. current else return 'REJECT count=' .. current end" 1 rate:limit:3001:order 10 60
+
+EVAL "local key = KEYS[1]; local limit = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local current = redis.call('INCR', key); if current == 1 then redis.call('EXPIRE', key, window); end; if current <= limit then return 'ALLOW count=' .. current else return 'REJECT count=' .. current end" 1 rate:limit:3001:order 10 60
+
+ECHO "批量模拟剩余请求（循环 10 次）"
+
+EVAL "local key = KEYS[1]; local limit = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); for i = 1, 10 do local current = redis.call('INCR', key); if current == 1 then redis.call('EXPIRE', key, window); end; end; local final = tonumber(redis.call('GET', key)); if final <= limit then return 'ALLOW final=' .. final else return 'REJECT final=' .. final end" 1 rate:limit:3001:order 10 60
+
+ECHO "当前计数（应超过 10，后续请求被拒绝）"
+
+GET rate:limit:3001:order
+
+TTL rate:limit:3001:order
+
+ECHO "固定窗口缺点：窗口边界突发流量（59s 10 次 + 61s 10 次 = 1 秒内 20 次）"
+
+ECHO ""
+ECHO "=== 4.2 滑动窗口限流（Sorted Set）==="
+ECHO "场景：用户 user:4001 调用 api:search，每 60 秒最多 5 次"
+ECHO "实现：ZSET score=时间戳，每次请求 ZREMRANGEBYSCORE 清旧 + ZADD + ZCARD"
+
+ECHO "清理函数：用 Lua 实现滑动窗口限流（current_time 为模拟时间戳）"
+
+EVAL "local key = KEYS[1]; local now = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local limit = tonumber(ARGV[3]); local member = ARGV[4]; redis.call('ZREMRANGEBYSCORE', key, 0, now - window); local count = redis.call('ZCARD', key); if count < limit then redis.call('ZADD', key, now, member); redis.call('EXPIRE', key, window); return 'ALLOW count=' .. (count + 1) else return 'REJECT count=' .. count end" 1 rate:limit:4001:search 1785216000 60 5 "req_1"
+
+EVAL "local key = KEYS[1]; local now = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local limit = tonumber(ARGV[3]); local member = ARGV[4]; redis.call('ZREMRANGEBYSCORE', key, 0, now - window); local count = redis.call('ZCARD', key); if count < limit then redis.call('ZADD', key, now, member); redis.call('EXPIRE', key, window); return 'ALLOW count=' .. (count + 1) else return 'REJECT count=' .. count end" 1 rate:limit:4001:search 1785216010 60 5 "req_2"
+
+EVAL "local key = KEYS[1]; local now = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local limit = tonumber(ARGV[3]); local member = ARGV[4]; redis.call('ZREMRANGEBYSCORE', key, 0, now - window); local count = redis.call('ZCARD', key); if count < limit then redis.call('ZADD', key, now, member); redis.call('EXPIRE', key, window); return 'ALLOW count=' .. (count + 1) else return 'REJECT count=' .. count end" 1 rate:limit:4001:search 1785216020 60 5 "req_3"
+
+EVAL "local key = KEYS[1]; local now = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local limit = tonumber(ARGV[3]); local member = ARGV[4]; redis.call('ZREMRANGEBYSCORE', key, 0, now - window); local count = redis.call('ZCARD', key); if count < limit then redis.call('ZADD', key, now, member); redis.call('EXPIRE', key, window); return 'ALLOW count=' .. (count + 1) else return 'REJECT count=' .. count end" 1 rate:limit:4001:search 1785216030 60 5 "req_4"
+
+EVAL "local key = KEYS[1]; local now = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local limit = tonumber(ARGV[3]); local member = ARGV[4]; redis.call('ZREMRANGEBYSCORE', key, 0, now - window); local count = redis.call('ZCARD', key); if count < limit then redis.call('ZADD', key, now, member); redis.call('EXPIRE', key, window); return 'ALLOW count=' .. (count + 1) else return 'REJECT count=' .. count end" 1 rate:limit:4001:search 1785216040 60 5 "req_5"
+
+ECHO "第 6 次请求（同窗口内，应被拒绝）"
+
+EVAL "local key = KEYS[1]; local now = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local limit = tonumber(ARGV[3]); local member = ARGV[4]; redis.call('ZREMRANGEBYSCORE', key, 0, now - window); local count = redis.call('ZCARD', key); if count < limit then redis.call('ZADD', key, now, member); redis.call('EXPIRE', key, window); return 'ALLOW count=' .. (count + 1) else return 'REJECT count=' .. count end" 1 rate:limit:4001:search 1785216050 60 5 "req_6"
+
+ECHO "查看滑动窗口内的请求记录（score=时间戳）"
+
+ZRANGE rate:limit:4001:search 0 -1 WITHSCORES
+
+ECHO ""
+ECHO "=== 4.3 令牌桶限流（Lua 脚本思路说明）==="
+ECHO "原理：以固定速率往桶里放令牌，请求消耗令牌，桶满则丢弃"
+ECHO "参数：capacity（桶容量）、rate（填充速率）、tokens（当前令牌数）"
+ECHO "Lua 逻辑："
+ECHO "  1. 读取上次时间和令牌数"
+ECHO "  2. 计算 elapsed * rate = 新增令牌"
+ECHO "  3. tokens = min(capacity, tokens + 新增)"
+ECHO "  4. tokens >= 1 → 消耗 1 令牌，返回 ALLOW"
+ECHO "  5. tokens < 1 → 返回 REJECT"
+
+ECHO ""
+ECHO "======================================================"
+ECHO "=== 五、限流算法对比                              ==="
+ECHO "======================================================"
+ECHO "固定窗口：实现简单（INCR+EXPIRE），有边界突发问题"
+ECHO "滑动窗口：平滑无突发（ZSET），内存开销略大"
+ECHO "令牌桶：允许突发流量（桶可攒令牌），实现稍复杂"
+ECHO "漏桶：严格匀速（队列实现），不允许突发"
+
+ECHO ""
+ECHO "=== 当前库 Key 概览 ==="
+
+DBSIZE
+
+ECHO ""
+ECHO "=== 演示结束 ==="

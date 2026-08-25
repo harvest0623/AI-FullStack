@@ -1,0 +1,133 @@
+ECHO "============================================================"
+ECHO "文件用途：缓存模式演示"
+ECHO "内容：Cache-Aside 旁路缓存流程模拟、null 值缓存防穿透、随机过期防雪崩"
+ECHO "适用：Redis 7.0+  redis-cli < 01-cache-patterns.redis"
+ECHO "============================================================"
+
+FLUSHDB
+
+ECHO ""
+ECHO "=== 1. Cache-Aside 旁路缓存模式流程模拟 ==="
+ECHO "步骤1：应用先查缓存 cache:product:1001（未命中返回 nil）"
+
+GET cache:product:1001
+
+ECHO "步骤2：缓存未命中，回源查 DB（此处模拟 DB 数据），然后写入缓存并设置过期时间"
+
+SET cache:product:1001 "{\"id\":1001,\"name\":\"iPhone 15 Pro\",\"price\":9999,\"stock\":500}" EX 3600
+
+ECHO "步骤3：再次查询缓存（命中）"
+
+GET cache:product:1001
+
+ECHO "步骤4：查看剩余过期时间（TTL）"
+
+TTL cache:product:1001
+
+ECHO ""
+ECHO "=== 2. Cache-Aside 用户缓存演示 ==="
+
+SET cache:user:2001 "{\"id\":2001,\"name\":\"张三\",\"level\":5}" EX 1800
+
+GET cache:user:2001
+
+TTL cache:user:2001
+
+ECHO ""
+ECHO "=== 3. 缓存更新：先更新 DB（模拟）→ 删除缓存（保证一致性）==="
+
+SET cache:product:1001 "{\"id\":1001,\"name\":\"iPhone 15 Pro\",\"price\":8999,\"stock\":500}" EX 3600
+
+DEL cache:product:1001
+
+ECHO "下次查询将触发回源重建缓存"
+
+GET cache:product:1001
+
+ECHO ""
+ECHO "=== 4. null 值缓存防止缓存穿透 ==="
+ECHO "场景：恶意请求查询不存在的商品 ID 9999，缓存和 DB 都没有"
+ECHO "方案：DB 查询为空时，写入 null 值缓存，短过期时间（60s）"
+
+GET cache:product:9999
+
+ECHO "DB 也查不到 → 写入空值缓存，防止后续请求继续打 DB"
+
+SET cache:product:9999 "" EX 60
+
+ECHO "再次查询返回空字符串（命中空值），不再访问 DB"
+
+GET cache:product:9999
+
+TTL cache:product:9999
+
+ECHO ""
+ECHO "=== 5. 布隆过滤器演示（模拟）==="
+ECHO "说明：Redis 7.4+ 可通过 RedisBloom 模块使用 BF.ADD / BF.EXISTS"
+ECHO "此处用 Set 模拟已注册的合法商品 ID 集合（真实布隆过滤器更省内存）"
+
+SADD bloom:filter:products 1001 1002 1003 1004 1005
+
+SISMEMBER bloom:filter:products 1001
+
+SISMEMBER bloom:filter:products 9999
+
+ECHO "商品 9999 不在过滤器中 → 直接拦截，无需查 DB"
+
+ECHO ""
+ECHO "=== 6. 随机过期时间防止缓存雪崩 ==="
+ECHO "场景：批量缓存同一时刻过期会导致请求全部打到 DB"
+ECHO "方案：过期时间 = 基础时间 + 随机偏移，打散过期时间点"
+
+ECHO "错误做法：所有 Key 过期时间相同（3600s）"
+
+SET cache:product:2001 "{\"id\":2001,\"name\":\"商品A\"}" EX 3600
+SET cache:product:2002 "{\"id\":2002,\"name\":\"商品B\"}" EX 3600
+SET cache:product:2003 "{\"id\":2003,\"name\":\"商品C\"}" EX 3600
+
+ECHO "正确做法：基础 3600s + 随机 0~300s 偏移（用 Lua 生成随机过期）"
+
+EVAL "local base = 3600; local offset = math.random(0, 300); redis.call('SET', KEYS[1], ARGV[1], 'EX', base + offset); return base + offset" 1 cache:product:3001 "{\"id\":3001,\"name\":\"商品D\"}"
+
+EVAL "local base = 3600; local offset = math.random(0, 300); redis.call('SET', KEYS[1], ARGV[1], 'EX', base + offset); return base + offset" 1 cache:product:3002 "{\"id\":3002,\"name\":\"商品E\"}"
+
+EVAL "local base = 3600; local offset = math.random(0, 300); redis.call('SET', KEYS[1], ARGV[1], 'EX', base + offset); return base + offset" 1 cache:product:3003 "{\"id\":3003,\"name\":\"商品F\"}"
+
+ECHO "查看各 Key 的 TTL（已经打散）"
+
+TTL cache:product:3001
+
+TTL cache:product:3002
+
+TTL cache:product:3003
+
+ECHO ""
+ECHO "=== 7. 批量设置商品缓存（循环 + 随机过期）==="
+
+EVAL "for i = 1, 10 do local id = 4000 + i; local ttl = 3600 + math.random(0, 600); redis.call('SET', 'cache:product:' .. id, '{\"id\":' .. id .. ',\"name\":\"product_' .. id .. '\"}', 'EX', ttl); end; return 'done'" 0
+
+ECHO "查看部分缓存 Key 的 TTL"
+
+TTL cache:product:4001
+
+TTL cache:product:4005
+
+TTL cache:product:4010
+
+ECHO ""
+ECHO "=== 8. 缓存击穿防护：热点 Key 永不过期（逻辑过期）==="
+ECHO "方案：不设 TTL，在 value 中记录逻辑过期时间，后台异步刷新"
+
+SET cache:product:hot100 "{\"id\":100,\"name\":\"秒杀商品\",\"price\":99,\"expire_at\":1785217800}"
+
+ECHO "value 中的 expire_at 为逻辑过期时间戳，应用判断过期后触发异步刷新"
+
+ECHO ""
+ECHO "=== 9. 总结：当前库 Key 概览 ==="
+
+DBSIZE
+
+SCAN 0
+
+ECHO ""
+ECHO "=== 演示结束 ==="
