@@ -1,0 +1,37 @@
+[
+  {
+    "id": 1,
+    "name": "手机",
+    "price": 2999.0,
+    "stock": 100,
+    "category": "电子"
+  },
+  {
+    "id": 2,
+    "name": "蓝牙耳机",
+    "price": 399.0,
+    "stock": 50,
+    "category": "电子"
+  },
+  {
+    "id": 3,
+    "name": "机械键盘",
+    "price": 599.0,
+    "stock": 30,
+    "category": "电子"
+  },
+  {
+    "id": 4,
+    "name": "纯棉T恤",
+    "price": 89.0,
+    "stock": 200,
+    "category": "服装"
+  },
+  {
+    "id": 5,
+    "name": "运动鞋",
+    "price": 459.0,
+    "stock": 80,
+    "category": "服装"
+  }
+]
