@@ -1,0 +1,111 @@
+# .pre-commit-config.yaml - pre-commit 钩子配置
+# 适用于 eshop 电商数据处理 CLI 工具
+# 用法：
+#   pip install pre-commit
+#   pre-commit install        # 安装 Git 钩子
+#   pre-commit run --all-files  # 手动运行所有钩子
+
+# 使用默认配置
+default_language_version:
+  python: python3.10
+
+# 排除的文件
+exclude: |
+    (?x)^(
+        \.venv/.*
+        | build/.*
+        | dist/.*
+        | .*\.egg-info/.*
+    )$
+
+repos:
+  # ============================================================
+  # 1. pre-commit-hooks 通用钩子
+  # ============================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # 检查文件末尾有且仅有一个换行符
+      - id: end-of-file-fixer
+        types: [python, text]
+      # 去除行尾空格
+      - id: trailing-whitespace
+        types: [python, text]
+      # 检查 YAML 语法
+      - id: check-yaml
+        args: [--unsafe]
+      # 检查 JSON 语法
+      - id: check-json
+      # 检查 TOML 语法
+      - id: check-toml
+      # 检查 merge 冲突标记
+      - id: check-merge-conflict
+      # 确保文件以换行结尾
+      - id: fix-encoding-pragma
+        args: [--remove]
+      # 检查大文件（>500KB）
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      # 检查可执行权限
+      - id: check-executables-have-shebangs
+      # Python 调试断言
+      - id: debug-statements
+
+  # ============================================================
+  # 2. Ruff - 代码检查与格式化（替代 flake8 + black）
+  # ============================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.7
+    hooks:
+      # 代码检查
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        # 使用 pyproject.toml 中的配置
+        files: ^(src|tests)/
+
+  # ============================================================
+  # 3. Black - 代码格式化
+  # ============================================================
+  - repo: https://github.com/psf/black
+    rev: 23.11.0
+    hooks:
+      - id: black
+        language_version: python3.10
+        args: [--line-length=99]
+        files: ^(src|tests)/
+
+  # ============================================================
+  # 4. isort - import 排序
+  # ============================================================
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=99]
+        files: ^(src|tests)/
+
+  # ============================================================
+  # 5. mypy - 静态类型检查
+  # ============================================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.7.1
+    hooks:
+      - id: mypy
+        args: [--strict, --config-file=pyproject.toml]
+        files: ^src/
+        # 额外的类型存根依赖
+        additional_dependencies:
+          - types-requests
+          - pydantic
+
+  # ============================================================
+  # 6. poetry-check - 检查 Poetry 配置一致性
+  # ============================================================
+  - repo: https://github.com/python-poetry/poetry
+    rev: 1.7.1
+    hooks:
+      - id: poetry-check
+        # 检查 pyproject.toml 与 poetry.lock 是否一致
+      - id: poetry-lock
+        # 确保锁文件是最新的（可选，可能较慢）
+        args: [--no-update]

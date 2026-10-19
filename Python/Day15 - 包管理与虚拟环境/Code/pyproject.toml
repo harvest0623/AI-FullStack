@@ -1,0 +1,273 @@
+# pyproject.toml - Poetry 项目配置完整示例
+# 适用于 eshop 电商数据处理 CLI 工具
+# Python 3.10+ 可直接使用
+# 使用 Poetry 作为依赖管理工具：https://python-poetry.org/
+
+[tool.poetry]
+# ==================== 项目元数据 ====================
+name = "eshop"
+version = "0.1.0"
+description = "电商数据处理 CLI 工具"
+authors = ["Your Name <you@example.com>"]
+maintainers = ["Your Name <you@example.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/yourname/eshop"
+repository = "https://github.com/yourname/eshop"
+documentation = "https://eshop.readthedocs.io"
+keywords = ["ecommerce", "cli", "data-processing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# src 布局：指定包的位置
+packages = [{ include = "eshop", from = "src" }]
+# 需要包含的文件
+include = ["src/eshop/data/*.json"]
+
+[tool.poetry.dependencies]
+# ==================== 生产依赖 ====================
+python = "^3.10"
+# CLI 框架
+click = "^8.1.7"
+# 终端美化输出
+rich = "^13.7.0"
+# HTTP 客户端
+requests = "^2.31.0"
+# 环境变量管理
+python-dotenv = "^1.0.0"
+# 数据验证（v2）
+pydantic = "^2.5.0"
+# 数据处理（可选，按需启用）
+# pandas = "^2.1.0"
+
+[tool.poetry.group.dev]
+# ==================== 开发依赖组（可选） ====================
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+# 测试框架
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+pytest-asyncio = "^0.21.0"
+# 类型检查
+mypy = "^1.7.0"
+# 代码格式化与检查
+black = "^23.11.0"
+ruff = "^0.1.7"
+isort = "^5.12.0"
+# pre-commit 钩子管理
+pre-commit = "^3.5.0"
+# 文档生成
+mkdocs = "^1.5.0"
+mkdocs-material = "^9.4.0"
+
+[tool.poetry.group.docs]
+# ==================== 文档依赖组（可选） ====================
+optional = true
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.5.0"
+mkdocs-material = "^9.4.0"
+mkdocstrings = { extras = ["python"], version = "^0.24.0" }
+
+[tool.poetry.scripts]
+# ==================== 命令行入口 ====================
+# 安装后会生成 eshop 命令
+eshop = "eshop.cli:main"
+
+# ============================================================
+# Ruff 配置（代码检查 + 格式化）
+# ============================================================
+[tool.ruff]
+# 目标 Python 版本
+target-version = "py310"
+# 行宽
+line-length = 99
+# 源码目录
+src = ["src", "tests"]
+# 排除的目录
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# 启用的规则集
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "N",    # pep8-naming
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+]
+# 忽略的规则
+ignore = [
+    "E501",  # 行太长（由 black 处理）
+    "B008",  # 函数默认值中调用（FastAPI 依赖注入常用）
+]
+# 自动修复
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.isort]
+# import 排序配置
+known-first-party = ["eshop"]
+known-third-party = ["click", "rich", "requests", "pydantic"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # 允许未使用的导入（可能是公开 API）
+"tests/*" = ["B011"]  # 允许 assert False
+
+[tool.ruff.format]
+# 格式化配置（与 black 兼容）
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# ============================================================
+# Black 配置（代码格式化）
+# ============================================================
+[tool.black]
+line-length = 99
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.git
+  | \.venv
+  | \.mypy_cache
+  | \.ruff_cache
+  | __pycache__
+  | build
+  | dist
+  | .*\.egg-info
+)/
+'''
+
+# ============================================================
+# isort 配置（import 排序）
+# ============================================================
+[tool.isort]
+profile = "black"
+line_length = 99
+known_first_party = ["eshop"]
+known_third_party = ["click", "rich", "requests", "pydantic"]
+skip = [".venv", "__pycache__", "build", "dist"]
+
+# ============================================================
+# mypy 配置（静态类型检查）
+# ============================================================
+[tool.mypy]
+# 目标 Python 版本
+python_version = "3.10"
+# 严格模式
+strict = true
+# 源码目录
+files = ["src", "tests"]
+# 排除的目录
+exclude = [
+    "build/",
+    "dist/",
+    ".venv/",
+]
+# 警告
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+# 严格可选类型
+no_implicit_optional = true
+strict_optional = true
+# 严格等价
+strict_equality = true
+# 显示错误代码
+show_error_codes = true
+# 漂亮的错误输出
+pretty = true
+
+# 第三方库类型忽略设置
+[[tool.mypy.overrides]]
+module = [
+    "click.*",
+    "rich.*",
+]
+ignore_missing_imports = true
+
+# 测试文件放宽部分规则
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# ============================================================
+# pytest 配置
+# ============================================================
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--cov=eshop",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+markers = [
+    "slow: 标记慢测试",
+    "integration: 集成测试",
+    "unit: 单元测试",
+]
+asyncio_mode = "auto"
+
+# ============================================================
+# coverage 配置
+# ============================================================
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+    "*/setup.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+# ============================================================
+# 构建系统
+# ============================================================
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
