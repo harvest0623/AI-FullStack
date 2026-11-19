@@ -1,0 +1,88 @@
+# ============================================================
+# 文件名：ecommerce-backend.service
+# 用途：电商项目 Node.js 后端的 systemd 服务单元文件
+# 适用：Ubuntu 22.04 LTS
+# 部署路径：/opt/ecommerce/backend/
+# 启动命令：/usr/bin/node /opt/ecommerce/backend/dist/main.js
+# 运行身份：deploy 用户
+# 上线步骤：
+#   1. sudo cp ecommerce-backend.service /etc/systemd/system/
+#   2. sudo systemctl daemon-reload
+#   3. sudo systemctl enable --now ecommerce-backend
+#   4. sudo systemctl status ecommerce-backend
+#   5. journalctl -u ecommerce-backend -f
+# ============================================================
+
+[Unit]
+# 服务可读名称与文档说明
+Description=Ecommerce Backend Service (Node.js)
+Documentation=https://github.com/your-org/ecommerce
+# 启动顺序：网络、MySQL、Redis 就绪后再启动本服务
+After=network.target mysql.service redis-server.service
+# 弱依赖：尝试启动 Redis，但 Redis 启动失败不阻止本服务
+Wants=redis-server.service
+# 强依赖：MySQL 必须先启动成功，否则本服务启动失败
+Requires=mysql.service
+
+[Service]
+# Type=simple 表示 ExecStart 启动的进程就是服务主进程（前台运行）
+# Node.js 应用一般用 simple；如果是 fork 出守护进程则用 forking
+Type=simple
+
+# 运行身份（生产环境强烈建议非 root 用户）
+User=deploy
+Group=deploy
+
+# 工作目录（影响相对路径解析、Node.js 模块查找）
+WorkingDirectory=/opt/ecommerce/backend
+
+# 环境变量：直接在单元文件中设置
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=LOG_LEVEL=info
+# 从 .env 文件加载额外变量（前缀 - 表示文件不存在不报错）
+EnvironmentFile=-/opt/ecommerce/backend/.env
+
+# 启动命令（必须是绝对路径）
+ExecStart=/usr/bin/node /opt/ecommerce/backend/dist/main.js
+
+# 停止命令（向主进程发 SIGTERM，让 Node.js 处理优雅退出）
+# $MAINPID 是 systemd 提供的变量，指向服务主进程 PID
+ExecStop=/bin/kill -TERM $MAINPID
+
+# 重载命令（向主进程发 SIGHUP，需应用支持热重载）
+ExecReload=/bin/kill -HUP $MAINPID
+
+# 重启策略：always 表示无论何种退出原因都自动重启
+# 取值：no / on-success / on-failure / on-abnormal / always
+Restart=always
+# 重启间隔（秒），避免频繁崩溃时刷屏
+RestartSec=5
+# 停止超时：超过 30 秒未退出则发 SIGKILL 强杀
+TimeoutStopSec=30
+# 进程杀灭方式：mixed 表示主进程发 SIGTERM，子进程发 SIGKILL
+KillMode=mixed
+# 停止信号（默认即 SIGTERM，显式声明便于阅读）
+KillSignal=SIGTERM
+
+# 资源限制
+# 文件描述符上限（Node.js 高并发场景默认 1024 不够用）
+LimitNOFILE=65536
+# 最大内存限制（超过会被 OOM Killer 杀掉，由 systemd 自动重启）
+MemoryMax=1G
+# CPU 配额（200% 表示最多用满 2 个核心）
+CPUQuota=200%
+
+# 日志输出：统一交由 journald 收集，可用 journalctl -u ecommerce-backend 查询
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ecommerce-backend
+
+# 安全加固（按需开启，可能影响某些 Node.js 模块运行，请测试后启用）
+# ProtectSystem=strict
+# ProtectHome=true
+# NoNewPrivileges=true
+
+[Install]
+# 启用时的弱依赖目标，multi-user.target 等同传统运行级别 3（多用户命令行）
+WantedBy=multi-user.target
