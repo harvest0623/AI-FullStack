@@ -1,0 +1,31 @@
+# 一个"Web + 数据库"的示例 compose 编排
+# 用法：docker compose up -d    （需 Docker，且 web 镜像需先构建或用现成镜像）
+# 这里 web 示例使用 nginx 占位；实际可换为你的应用镜像名
+
+services:
+  web:
+    image: nginx:1.27          # 示例占位；可改成你自己构建的镜像
+    ports:
+      - "8080:80"              # 对外端口映射
+    depends_on:
+      - db                     # 先启动 db
+    environment:
+      - DB_HOST=db             # 用服务名 db 访问数据库
+    networks:
+      - appnet
+
+  db:
+    image: mysql:8
+    environment:
+      - MYSQL_ROOT_PASSWORD=secret
+      - MYSQL_DATABASE=app
+    volumes:
+      - dbdata:/var/lib/mysql  # 数据持久化（Day07 详谈）
+    networks:
+      - appnet
+
+volumes:
+  dbdata:
+
+networks:
+  appnet:
