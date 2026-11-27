@@ -1,0 +1,26 @@
+# 直接使用官方 Ollama 镜像（最简方式），也可选择自定义你的推理服务镜像
+# 用法：docker compose -f docker-compose.gpu.yml up -d
+# 需要：宿主机已装 NVIDIA Container Toolkit，且 Docker 支持 gpu
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"            # Ollama API 端口
+    volumes:
+      - ollama_models:/root/.ollama   # 模型文件持久化（Day07）
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    # GPU 支持：把宿主机 GPU 传给容器（需 NVIDIA Container Toolkit）
+    # 若纯 CPU 可注释掉 deploy 段
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all        # or: capabilities: [gpu]
+              capabilities: [gpu]
+
+volumes:
+  ollama_models:
