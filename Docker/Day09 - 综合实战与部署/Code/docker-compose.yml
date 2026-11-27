@@ -1,0 +1,58 @@
+# 综合实战：前端 + 后端 + 向量库 + Ollama 模型服务的完整应用栈
+# 说明：这是组合架构模板。web/backend 用占位镜像，可按你实际镜像替换。
+# 用法：docker compose up -d
+
+services:
+  # 模型服务：本地大模型（Day08）
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]      # CPU 可删去 deploy 段
+    networks:
+      - appnet
+
+  # 向量库（RAG 检索层底座，如 qdrant/chroma）
+  vectorstore:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - appnet
+
+  # 后端：业务/RAG/工具编排（你自己构建的镜像）
+  backend:
+    image: mybackend:1.0
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ollama
+      - vectorstore
+    environment:
+      - OLLAMA_HOST=ollama:11434      # 用服务名访问 Ollama
+      - QDRANT_URL=http://vectorstore:6333
+    networks:
+      - appnet
+
+  # 前端：Web 界面
+  frontend:
+    image: myfrontend:1.0
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - appnet
+
+volumes:
+  ollama_models:
+  qdrant_data:
+
+networks:
+  appnet:

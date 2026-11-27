@@ -1,0 +1,43 @@
+# 生产镜像参考：多阶段 + 精简 + 非root + 健康检查
+# 用法：docker build -f Dockerfile.prod -t mybackend:1.0 .
+
+# ---- 阶段一：builder（装依赖，出产物/依赖目录） ----
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
+
+# 系统编译依赖（仅在 builder 阶段需要）
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+# 把依赖预装到一个独立目录，runtime 直接拷贝（比装两份更干净）
+RUN pip wheel --no-deps -w /wheels -r requirements.txt
+
+# ---- 阶段二：runtime（精简运行环境） ----
+FROM python:3.11-slim AS runtime
+
+WORKDIR /app
+ENV PATH=/usr/local/bin:$PATH
+
+# 拷贝运行所需依赖
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
+
+# 拷贝业务代码（多阶段从 builder 复制，保持单来源）
+COPY --from=builder /app/app.py /app/
+
+# 非 root 用户运行
+RUN useradd -m appuser \
+ && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+ENV MODEL_PATH=/models/model.bin
+
+# 健康检查（告诉 orchestrator 容器是否存活）
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
